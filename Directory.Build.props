@@ -1,0 +1,41 @@
+<Project>
+
+  <!--
+    KSP path resolution, mirrored from MechJeb2's Directory.Build.props.
+    Override by creating Directory.Build.props.user (gitignored) with:
+
+      <Project>
+        <PropertyGroup>
+          <KspDir>/your/path/to/KSP</KspDir>
+          <HarmonyDll>/path/to/0Harmony.dll</HarmonyDll>
+        </PropertyGroup>
+      </Project>
+  -->
+  <Import Project="Directory.Build.props.user" Condition="Exists('Directory.Build.props.user')"/>
+
+  <PropertyGroup Condition="'$(KspDir)' == ''">
+    <KspDir Condition="'$(OS)' == 'Windows_NT'">$([System.Environment]::GetEnvironmentVariable('ProgramFiles(x86)'))\Steam\steamapps\common\Kerbal Space Program</KspDir>
+    <KspDir Condition="'$(OS)' != 'Windows_NT' And Exists('/Library')">$(HOME)/Library/Application Support/Steam/steamapps/common/Kerbal Space Program</KspDir>
+    <KspDir Condition="'$(OS)' != 'Windows_NT' And !Exists('/Library')">$(HOME)/.steam/steam/steamapps/common/Kerbal Space Program</KspDir>
+  </PropertyGroup>
+
+  <PropertyGroup Condition="'$(KspData)' == ''">
+    <KspData Condition="'$(OS)' == 'Windows_NT'">$(KspDir)\KSP_x64_Data</KspData>
+    <KspData Condition="'$(OS)' != 'Windows_NT' And Exists('$(KspDir)/KSP.app')">$(KspDir)/KSP.app/Contents/Resources/Data</KspData>
+    <KspData Condition="'$(OS)' != 'Windows_NT' And !Exists('$(KspDir)/KSP.app')">$(KspDir)/KSP_Data</KspData>
+  </PropertyGroup>
+
+  <!-- Harmony ships with KSP as the 000_Harmony redistributable. Override HarmonyDll if yours lives elsewhere. -->
+  <PropertyGroup Condition="'$(HarmonyDll)' == ''">
+    <HarmonyDll>$(KspDir)/GameData/000_Harmony/0Harmony.dll</HarmonyDll>
+  </PropertyGroup>
+
+  <!-- Hard dependencies: the bridge is useless without both mods, so we reference them directly. -->
+  <PropertyGroup Condition="'$(MechJebDll)' == ''">
+    <MechJebDll>$(KspDir)/GameData/MechJeb2/Plugins/MechJeb2.dll</MechJebDll>
+  </PropertyGroup>
+  <PropertyGroup Condition="'$(RemoteTechDll)' == ''">
+    <RemoteTechDll>$(KspDir)/GameData/RemoteTech/Plugins/RemoteTech.dll</RemoteTechDll>
+  </PropertyGroup>
+
+</Project>

@@ -1,0 +1,48 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+    <PropertyGroup>
+        <TargetFramework>net48</TargetFramework>
+        <RootNamespace>MechJebRTBridge</RootNamespace>
+        <AssemblyName>MechJebRTBridge</AssemblyName>
+        <LangVersion>8</LangVersion>
+        <AppendTargetFrameworkToOutputPath>false</AppendTargetFrameworkToOutputPath>
+        <Prefer32Bit>false</Prefer32Bit>
+        <!-- The bridge is a compatibility shim: it only makes sense with BOTH mods
+             installed, so it hard-references them (SpecificVersion=False binds by simple
+             name, so a mod rebuild is fine; only an actual API/signature change matters). -->
+    </PropertyGroup>
+
+    <ItemGroup>
+        <Reference Include="Assembly-CSharp">
+            <HintPath>$(KspData)/Managed/Assembly-CSharp.dll</HintPath>
+            <SpecificVersion>False</SpecificVersion>
+            <Private>False</Private>
+        </Reference>
+        <Reference Include="MechJeb2">
+            <HintPath>$(MechJebDll)</HintPath>
+            <SpecificVersion>False</SpecificVersion>
+            <Private>False</Private>
+        </Reference>
+        <Reference Include="RemoteTech">
+            <HintPath>$(RemoteTechDll)</HintPath>
+            <SpecificVersion>False</SpecificVersion>
+            <Private>False</Private>
+        </Reference>
+        <Reference Include="UnityEngine">
+            <HintPath>$(KspData)/Managed/UnityEngine.dll</HintPath>
+            <SpecificVersion>False</SpecificVersion>
+            <Private>False</Private>
+        </Reference>
+        <Reference Include="UnityEngine.CoreModule">
+            <HintPath>$(KspData)/Managed/UnityEngine.CoreModule.dll</HintPath>
+            <SpecificVersion>False</SpecificVersion>
+            <Private>False</Private>
+        </Reference>
+        <Reference Include="0Harmony">
+            <HintPath>$(HarmonyDll)</HintPath>
+            <SpecificVersion>False</SpecificVersion>
+            <Private>False</Private>
+        </Reference>
+    </ItemGroup>
+
+</Project>

@@ -1,0 +1,19 @@
+# Build output
+bin/
+obj/
+
+# Machine-specific KSP paths (each dev sets their own)
+Directory.Build.props.user
+
+# IDE / editor
+.vs/
+.vscode/
+.idea/
+*.user
+*.suo
+*.userprefs
+*.DotSettings.user
+
+# OS junk
+.DS_Store
+Thumbs.db
