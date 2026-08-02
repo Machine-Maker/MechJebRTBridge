@@ -1,48 +1,50 @@
 <Project Sdk="Microsoft.NET.Sdk">
 
-    <PropertyGroup>
-        <TargetFramework>net48</TargetFramework>
-        <RootNamespace>MechJebRTBridge</RootNamespace>
-        <AssemblyName>MechJebRTBridge</AssemblyName>
-        <LangVersion>8</LangVersion>
-        <AppendTargetFrameworkToOutputPath>false</AppendTargetFrameworkToOutputPath>
-        <Prefer32Bit>false</Prefer32Bit>
-        <!-- The bridge is a compatibility shim: it only makes sense with BOTH mods
-             installed, so it hard-references them (SpecificVersion=False binds by simple
-             name, so a mod rebuild is fine; only an actual API/signature change matters). -->
-    </PropertyGroup>
+  <PropertyGroup>
+    <TargetFramework>net48</TargetFramework>
+    <RootNamespace>MechJebRTBridge</RootNamespace>
+    <AssemblyName>MechJebRTBridge</AssemblyName>
+    <LangVersion>8</LangVersion>
+    <AppendTargetFrameworkToOutputPath>false</AppendTargetFrameworkToOutputPath>
+    <Prefer32Bit>false</Prefer32Bit>
+  </PropertyGroup>
 
-    <ItemGroup>
-        <Reference Include="Assembly-CSharp">
-            <HintPath>$(KspData)/Managed/Assembly-CSharp.dll</HintPath>
-            <SpecificVersion>False</SpecificVersion>
-            <Private>False</Private>
-        </Reference>
-        <Reference Include="MechJeb2">
-            <HintPath>$(MechJebDll)</HintPath>
-            <SpecificVersion>False</SpecificVersion>
-            <Private>False</Private>
-        </Reference>
-        <Reference Include="RemoteTech">
-            <HintPath>$(RemoteTechDll)</HintPath>
-            <SpecificVersion>False</SpecificVersion>
-            <Private>False</Private>
-        </Reference>
-        <Reference Include="UnityEngine">
-            <HintPath>$(KspData)/Managed/UnityEngine.dll</HintPath>
-            <SpecificVersion>False</SpecificVersion>
-            <Private>False</Private>
-        </Reference>
-        <Reference Include="UnityEngine.CoreModule">
-            <HintPath>$(KspData)/Managed/UnityEngine.CoreModule.dll</HintPath>
-            <SpecificVersion>False</SpecificVersion>
-            <Private>False</Private>
-        </Reference>
-        <Reference Include="0Harmony">
-            <HintPath>$(HarmonyDll)</HintPath>
-            <SpecificVersion>False</SpecificVersion>
-            <Private>False</Private>
-        </Reference>
-    </ItemGroup>
+  <ItemGroup>
+    <!-- MinVer sets $(Version) / $(FileVersion) from git tags (v0.1.0 → 0.1.0) -->
+    <PackageReference Include="MinVer" Version="4.*" PrivateAssets="All" />
+    <PackageReference Include="KSPBuildTools" Version="1.1.1" />
+  </ItemGroup>
+
+  <!-- Hard dependencies — the bridge is useless without both mods installed.
+       CKANIdentifier drives `ckan install` in CI via setup-ckan + install-dependencies.
+       Locally, set KSPBT_InstallCKANDependencies=false (see Directory.Build.props.user). -->
+  <ItemGroup>
+    <ModReference Include="MechJeb2">
+      <DLLPath>GameData/MechJeb2/Plugins/MechJeb2.dll</DLLPath>
+      <CKANIdentifier>MechJeb2</CKANIdentifier>
+    </ModReference>
+    <ModReference Include="RemoteTech">
+      <DLLPath>GameData/RemoteTech/Plugins/RemoteTech.dll</DLLPath>
+      <CKANIdentifier>RemoteTech</CKANIdentifier>
+    </ModReference>
+    <ModReference Include="0Harmony">
+      <DLLPath>GameData/000_Harmony/0Harmony.dll</DLLPath>
+      <CKANIdentifier>Harmony2</CKANIdentifier>
+    </ModReference>
+  </ItemGroup>
+
+  <!-- .version file generated on build from MinVer version + static metadata.
+       Destination is gitignored; it ends up in GameData/ for packaging. -->
+  <ItemGroup>
+    <KSPVersionFile Include=".">
+      <Destination>$(KSPBT_ModRoot)MechJebRTBridge.version</Destination>
+      <Version>$(MinVerMajor).$(MinVerMinor).$(MinVerPatch)</Version>
+      <URL>https://github.com/Machine-Maker/MechJebRTBridge/releases/latest/download/MechJebRTBridge.version</URL>
+      <Download>https://github.com/Machine-Maker/MechJebRTBridge/releases/latest</Download>
+      <KSP_Version>1.12</KSP_Version>
+      <KSP_Version_Min>1.8</KSP_Version_Min>
+      <KSP_Version_Max>1.12</KSP_Version_Max>
+    </KSPVersionFile>
+  </ItemGroup>
 
 </Project>

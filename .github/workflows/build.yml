@@ -1,0 +1,14 @@
+name: Build
+
+on:
+  push:
+    branches: ['**']
+    tags-ignore: ['v*.*.*']
+  pull_request:
+
+jobs:
+  build:
+    uses: KSPModdingLibs/KSPBuildTools/.github/workflows/build.yml@v1.1.1
+    with:
+      use-ckan: true
+      dependency-identifiers: 'MechJeb2 RemoteTech Harmony2'
