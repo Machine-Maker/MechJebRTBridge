@@ -1,0 +1,121 @@
+name: Release
+
+on:
+  push:
+    tags: ['v*.*.*']
+
+jobs:
+  release:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write   # needed to create GitHub releases
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: '8.x'
+
+      # ── KSP proprietary DLLs ─────────────────────────────────────────────
+      # These can't be redistributed, so store them in repo secrets as base64.
+      # To generate: base64 -w0 Assembly-CSharp.dll | gh secret set KSP_ASSEMBLY_CSHARP
+      # Required secrets:
+      #   KSP_ASSEMBLY_CSHARP       Assembly-CSharp.dll
+      #   KSP_UNITY_ENGINE          UnityEngine.dll
+      #   KSP_UNITY_ENGINE_CORE     UnityEngine.CoreModule.dll
+      - name: Restore KSP managed DLLs from secrets
+        env:
+          KSP_ASSEMBLY_CSHARP:   ${{ secrets.KSP_ASSEMBLY_CSHARP }}
+          KSP_UNITY_ENGINE:      ${{ secrets.KSP_UNITY_ENGINE }}
+          KSP_UNITY_ENGINE_CORE: ${{ secrets.KSP_UNITY_ENGINE_CORE }}
+        run: |
+          mkdir -p /tmp/ksp-managed
+          echo "$KSP_ASSEMBLY_CSHARP"   | base64 -d > /tmp/ksp-managed/Assembly-CSharp.dll
+          echo "$KSP_UNITY_ENGINE"      | base64 -d > /tmp/ksp-managed/UnityEngine.dll
+          echo "$KSP_UNITY_ENGINE_CORE" | base64 -d > /tmp/ksp-managed/UnityEngine.CoreModule.dll
+
+      # ── Open-source mod DLLs (downloaded from their GitHub releases) ─────
+      - name: Download mod DLLs
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          mkdir -p /tmp/mod-dlls
+
+          # MechJeb2 (MIT)
+          MECHJEB_URL=$(gh api repos/MuMech/MechJeb2/releases/latest \
+            --jq '.assets[] | select(.name | endswith(".zip")) | .browser_download_url' \
+            | head -1)
+          curl -sL "$MECHJEB_URL" -o /tmp/mechjeb2.zip
+          unzip -j /tmp/mechjeb2.zip "*/MechJeb2.dll" -d /tmp/mod-dlls/
+
+          # RemoteTech (MIT) — latest stable release
+          RT_URL=$(gh api repos/RemoteTech/RemoteTech/releases/latest \
+            --jq '.assets[] | select(.name | endswith(".zip")) | .browser_download_url' \
+            | head -1)
+          curl -sL "$RT_URL" -o /tmp/remotetech.zip
+          unzip -j /tmp/remotetech.zip "*/RemoteTech.dll" -d /tmp/mod-dlls/
+
+          # 000_Harmony / HarmonyKSP (MIT)
+          HARMONY_URL=$(gh api repos/KSPModdingLibs/HarmonyKSP/releases/latest \
+            --jq '.assets[] | select(.name | endswith(".zip")) | .browser_download_url' \
+            | head -1)
+          curl -sL "$HARMONY_URL" -o /tmp/harmony.zip
+          unzip -j /tmp/harmony.zip "*/0Harmony.dll" -d /tmp/mod-dlls/
+
+      # ── Build ─────────────────────────────────────────────────────────────
+      - name: Write CI build config
+        run: |
+          cat > Directory.Build.props.user << 'EOF'
+          <Project>
+            <PropertyGroup>
+              <KspData>/tmp/ksp-managed</KspData>
+              <MechJebDll>/tmp/mod-dlls/MechJeb2.dll</MechJebDll>
+              <RemoteTechDll>/tmp/mod-dlls/RemoteTech.dll</RemoteTechDll>
+              <HarmonyDll>/tmp/mod-dlls/0Harmony.dll</HarmonyDll>
+              <!-- KspDir intentionally unset: PostBuild only copies to repo GameData -->
+            </PropertyGroup>
+          </Project>
+          EOF
+
+      - name: Build Release
+        run: dotnet build -c Release
+
+      # ── Package ───────────────────────────────────────────────────────────
+      - name: Package zip
+        run: |
+          VERSION="${GITHUB_REF_NAME#v}"
+          ZIP_NAME="MechJebRTBridge-${VERSION}.zip"
+          (cd GameData && zip -r "../${ZIP_NAME}" MechJebRTBridge/)
+          SHA256=$(sha256sum "${ZIP_NAME}" | cut -d' ' -f1)
+          SIZE=$(stat -c%s "${ZIP_NAME}")
+          echo "VERSION=${VERSION}"   >> "$GITHUB_ENV"
+          echo "ZIP_NAME=${ZIP_NAME}" >> "$GITHUB_ENV"
+          echo "SHA256=${SHA256}"     >> "$GITHUB_ENV"
+          echo "SIZE=${SIZE}"         >> "$GITHUB_ENV"
+
+      # ── Release ───────────────────────────────────────────────────────────
+      - name: Create GitHub Release
+        uses: softprops/action-gh-release@v2
+        with:
+          name: MechJebRTBridge ${{ env.VERSION }}
+          files: |
+            ${{ env.ZIP_NAME }}
+            GameData/MechJebRTBridge/MechJebRTBridge.version
+          body: |
+            ## Installation
+            Install via CKAN, or extract the zip so that `MechJebRTBridge/` lands inside your `GameData/` folder.
+
+            **Dependencies** (CKAN installs these automatically):
+            - MechJeb2
+            - RemoteTech
+            - 000_Harmony
+
+            ## CKAN `.ckan` snippet
+            Copy these values into the CKAN meta entry for this release:
+            ```
+            "version":       "${{ env.VERSION }}",
+            "download":      "https://github.com/Machine-Maker/MechJebRTBridge/releases/download/${{ github.ref_name }}/${{ env.ZIP_NAME }}",
+            "download_size": ${{ env.SIZE }},
+            "download_hash": { "sha256": "${{ env.SHA256 }}" }
+            ```

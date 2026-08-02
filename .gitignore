@@ -1,6 +1,7 @@
 # Build output
 bin/
 obj/
+GameData/*/Plugins/
 
 # Machine-specific KSP paths (each dev sets their own)
 Directory.Build.props.user

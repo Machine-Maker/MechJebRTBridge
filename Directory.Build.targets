@@ -1,0 +1,27 @@
+<Project>
+
+  <!--
+    Post-build copy targets.
+    1. Always copies the DLL to the repo's GameData folder (for release packaging).
+    2. When KspDir is set (local dev via Directory.Build.props.user), also copies to
+       the KSP install — replaces the manual `cp` command.
+  -->
+  <Target Name="CopyToGameData" AfterTargets="Build">
+
+    <!-- Repo's GameData (always — needed for release packaging in CI and locally) -->
+    <MakeDir Directories="$(MSBuildProjectDirectory)/GameData/MechJebRTBridge/Plugins" />
+    <Copy SourceFiles="$(TargetPath)"
+          DestinationFolder="$(MSBuildProjectDirectory)/GameData/MechJebRTBridge/Plugins"
+          SkipUnchangedFiles="true" />
+
+    <!-- KSP install (only when KspDir is set, i.e. local dev) -->
+    <MakeDir Condition="'$(KspDir)' != ''"
+             Directories="$(KspDir)/GameData/MechJebRTBridge/Plugins" />
+    <Copy   Condition="'$(KspDir)' != ''"
+            SourceFiles="$(TargetPath)"
+            DestinationFolder="$(KspDir)/GameData/MechJebRTBridge/Plugins"
+            SkipUnchangedFiles="true" />
+
+  </Target>
+
+</Project>

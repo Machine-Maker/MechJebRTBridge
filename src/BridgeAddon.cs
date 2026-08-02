@@ -18,26 +18,38 @@ namespace MechJebRTBridge
         {
             var harmony = new Harmony(HarmonyId);
 
-            // Core: intercept the SmartASS attitude command and delay it. Must work.
+            // SmartASS: delay Engage; track committed mode each frame; capture attitude for
+            // sanctioned-pilot hold during signal blackout.
             Patch(harmony, "MuMech.MechJebModuleSmartASS:Engage",
-                  prefix: nameof(SmartAssBridge.EngagePrefix));
-
-            // Optional: track the vessel's actual mode each frame so the held highlight
-            // never flickers. SmartASS inherits OnFixedUpdate from ComputerModule, so patch
-            // it on the base type (the postfix filters by instance).
+                  prefix:  H(typeof(SmartAssBridge),  nameof(SmartAssBridge.EngagePrefix)));
             Patch(harmony, "MuMech.ComputerModule:OnFixedUpdate",
-                  postfix: nameof(SmartAssBridge.TrackPostfix));
-
-            // Keep the onboard attitude hold alive through a signal blackout: capture what
-            // MechJeb's attitude controller computes each frame so we can re-apply it as a
-            // RemoteTech sanctioned pilot (which runs after RT neutralizes on lost signal).
+                  postfix: H(typeof(SmartAssBridge),  nameof(SmartAssBridge.TrackPostfix)));
             Patch(harmony, "MuMech.MechJebModuleAttitudeController:Drive",
-                  postfix: nameof(SmartAssBridge.CaptureAttitudePostfix));
+                  postfix: H(typeof(SmartAssBridge),  nameof(SmartAssBridge.CaptureAttitudePostfix)));
+
+            // Node executor: delay activation only. Abort() is intentionally not patched —
+            // MechJeb calls it internally when nodes are consumed or deleted, and those
+            // internal calls must not be queued. The instant local abort is the §8 cutoff.
+            Patch(harmony, "MuMech.MechJebModuleNodeExecutor:ExecuteOneNode",
+                  prefix: H(typeof(NodeExecutorBridge), nameof(NodeExecutorBridge.ExecuteOneNodePrefix)));
+            Patch(harmony, "MuMech.MechJebModuleNodeExecutor:ExecuteAllNodes",
+                  prefix: H(typeof(NodeExecutorBridge), nameof(NodeExecutorBridge.ExecuteAllNodesPrefix)));
+
+            // Landing autopilot: delay activation only. StopLanding() is intentionally not
+            // patched — MechJeb calls it internally at touchdown, same issue as Abort above.
+            Patch(harmony, "MuMech.MechJebModuleLandingAutopilot:LandAtPositionTarget",
+                  prefix: H(typeof(LandingBridge), nameof(LandingBridge.LandAtPositionTargetPrefix)));
+            Patch(harmony, "MuMech.MechJebModuleLandingAutopilot:LandUntargeted",
+                  prefix: H(typeof(LandingBridge), nameof(LandingBridge.LandUntargetedPrefix)));
 
             Debug.Log("[MJ-RT Bridge] Initialised.");
         }
 
-        private static void Patch(Harmony harmony, string target, string prefix = null, string postfix = null)
+        private static HarmonyMethod H(Type t, string methodName) =>
+            new HarmonyMethod(t, methodName);
+
+        private static void Patch(Harmony harmony, string target,
+            HarmonyMethod prefix = null, HarmonyMethod postfix = null)
         {
             try
             {
@@ -47,9 +59,7 @@ namespace MechJebRTBridge
                     Debug.LogWarning($"[MJ-RT Bridge] patch target not found (skipped): {target}");
                     return;
                 }
-                harmony.Patch(method,
-                    prefix:  prefix  != null ? new HarmonyMethod(typeof(SmartAssBridge), prefix)  : null,
-                    postfix: postfix != null ? new HarmonyMethod(typeof(SmartAssBridge), postfix) : null);
+                harmony.Patch(method, prefix: prefix, postfix: postfix);
                 Debug.Log($"[MJ-RT Bridge] patched {target}");
             }
             catch (Exception e)
