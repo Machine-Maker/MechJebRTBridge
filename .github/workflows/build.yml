@@ -8,7 +8,7 @@ on:
 
 jobs:
   build:
-    uses: KSPModdingLibs/KSPBuildTools/.github/workflows/build.yml@v1.1.1
+    uses: KSPModdingLibs/KSPBuildTools/.github/workflows/build.yml@1.1.1
     with:
       use-ckan: true
       dependency-identifiers: 'MechJeb2 RemoteTech Harmony2'

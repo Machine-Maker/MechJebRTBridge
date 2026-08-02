@@ -21,15 +21,15 @@ jobs:
         with:
           dotnet-version: '8.x'
 
-      - uses: KSPModdingLibs/KSPBuildTools/actions/setup-ckan@v1.1.1
+      - uses: KSPModdingLibs/KSPBuildTools/actions/setup-ckan@1.1.1
 
-      - uses: KSPModdingLibs/KSPBuildTools/actions/install-dependencies@v1.1.1
+      - uses: KSPModdingLibs/KSPBuildTools/actions/install-dependencies@1.1.1
         with:
           dependency-identifiers: 'MechJeb2 RemoteTech Harmony2'
 
-      - uses: KSPModdingLibs/KSPBuildTools/actions/compile@v1.1.1
+      - uses: KSPModdingLibs/KSPBuildTools/actions/compile@1.1.1
 
-      - uses: KSPModdingLibs/KSPBuildTools/actions/assemble-release@v1.1.1
+      - uses: KSPModdingLibs/KSPBuildTools/actions/assemble-release@1.1.1
         id: assemble
         with:
           zip-name: 'MechJebRTBridge-${{ github.ref_name }}'
