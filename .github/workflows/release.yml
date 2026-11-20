@@ -32,7 +32,8 @@ jobs:
       - uses: KSPModdingLibs/KSPBuildTools/.github/actions/assemble-release@1.1.1
         id: assemble
         with:
-          zip-name: 'MechJebRTBridge-${{ github.ref_name }}'
+          # Names both the zip and its top-level folder: MechJebRTBridge-vX.Y.Z/GameData/MechJebRTBridge/
+          output-file-name: 'MechJebRTBridge-${{ github.ref_name }}'
 
       - name: Create GitHub release
         uses: softprops/action-gh-release@v2
@@ -44,7 +45,7 @@ jobs:
           body: |
             ## Installation
             Install via CKAN (add the [Machine-Maker mods repository](https://github.com/Machine-Maker/KSP-Mods-CKAN)),
-            or extract the zip so that `MechJebRTBridge/` lands inside your `GameData/` folder.
+            or copy the zip's `GameData/MechJebRTBridge/` folder into your KSP `GameData/` folder.
 
             **Dependencies** (CKAN installs these automatically):
             - MechJeb2
@@ -58,7 +59,8 @@ jobs:
           VERSION="${GITHUB_REF_NAME#v}"
           ZIP_PATH="${{ steps.assemble.outputs.artifact-zip-path }}"
           ZIP_NAME="$(basename "$ZIP_PATH")"
-          SHA256=$(sha256sum "$ZIP_PATH" | cut -d' ' -f1)
+          # CKAN compares download_hash case-sensitively against uppercase hex; sha256sum prints lowercase
+          SHA256=$(sha256sum "$ZIP_PATH" | cut -d' ' -f1 | tr 'a-f' 'A-F')
           SIZE=$(stat -c%s "$ZIP_PATH")
 
           git clone https://x-access-token:${GH_TOKEN}@github.com/Machine-Maker/KSP-Mods-CKAN.git /tmp/ckan-meta
@@ -83,7 +85,7 @@ jobs:
               { "name": "Harmony2" }
             ],
             "install": [
-              { "find": "MechJebRTBridge", "install_to": "GameData" }
+              { "find": "GameData/MechJebRTBridge", "install_to": "GameData" }
             ]
           }
           EOF
