@@ -134,10 +134,10 @@ stick input still takes over, but late.
 
 | MechJeb feature | Replaces by hand | Player command (seam) | Status |
 |---|---|---|---|
-| Rendezvous AP engage / disengage | Burns, steering | `Autopilot.Users.Add(window)` / `Users.Clear()` (`UI/RendezvousAutopilotView.cs:47/55`) | ⬜ |
+| Rendezvous AP engage / disengage | Burns, steering | `Autopilot.Users.Add(window)` / `Users.Clear()` (`UI/RendezvousAutopilotView.cs:47/55`); *2.15.4* `Users.Add/Remove(this)` (`RendezvousAutopilotWindow.cs:39/43`) | ✅ generic `UserPool` seam (§6) |
 | Rendezvous AP running node burns | — | Internal `Core.Node.ExecuteAllNodes(this)` (`RendezvousAutopilot.cs:237`) | — runs locally (fixed, §5.1) |
 | Rendezvous Planner node execution | Steering + throttle | via `NodeUi.ExecuteButtons` → `ExecuteOneNode/AllNodes(guidance)` | ✅ |
-| Docking AP engage / disengage | RCS translate, steering, SAS/RCS AG | `Ap.Users.Add(guidance)` / `Users.Clear()` (`UI/DockingGuidanceView.cs:173/175`) | ⬜ |
+| Docking AP engage / disengage | RCS translate, steering, SAS/RCS AG | `Ap.Users.Add(guidance)` / `Users.Clear()` (`UI/DockingGuidanceView.cs:173/175`); *2.15.4* toggle → `Users.Add/Remove(this)` (`DockingGuidance.cs:112/116`) | ✅ generic `UserPool` seam (§6) |
 | Docking speed limits, target port | — | field edits / target | ⚠️ setpoint / — |
 
 ### 3.8 RCS
@@ -180,10 +180,10 @@ stick input still takes over, but late.
 
 | Bucket | Count | Items |
 |---|---|---|
-| ✅ Delayed | 3 seams | SmartASS `Engage`; NodeExecutor `ExecuteOneNode/AllNodes`; Landing `LandAtPositionTarget/LandUntargeted` |
+| ✅ Delayed | 4 seams | SmartASS `Engage`; NodeExecutor `ExecuteOneNode/AllNodes`; Landing `LandAtPositionTarget/LandUntargeted`; generic `UserPool.Add/Remove/Clear` (Rendezvous AP, Docking AP, engage **and** disengage) |
 | 🐞 Wrongly delayed | 0 | (§5.1–5.3 fixed) |
-| ⬜ Clean gaps | ~14 | Ascent AP, timed launch, Rendezvous AP, Docking AP, Hoverslam, Translatron mode + PANIC, SmartRCS, RCS balancer, Autostage + Autostage-once, Rover drive/stop, auto-deploy toggles, extend/retract all |
-| ⚠️ Needs design | — | Cancellations (`Abort`, `StopLanding`, `Users.Clear`); setpoint field writes (thrust limiters, Translatron speed, rover, ascent/docking settings); menu `Enabled` checkbox |
+| ⬜ Clean gaps | ~12 | Ascent AP, timed launch, Hoverslam, Translatron mode + PANIC, SmartRCS, RCS balancer, Autostage + Autostage-once, Rover drive/stop, auto-deploy toggles, extend/retract all |
+| ⚠️ Needs design | — | Cancellations (`Abort`, `StopLanding`; `Users.Clear` is done for allowlisted modules); setpoint field writes (thrust limiters, Translatron speed, rover, ascent/docking settings); menu `Enabled` checkbox |
 | — Not delayed by design | — | Node planning/editing, warp, targeting, info/predictions/settings, on-board automation MechJeb runs after a command |
 
 ---
@@ -242,9 +242,27 @@ script runs on the vessel's own CPU, so its MechJeb calls are on-board and shoul
   **core module methods**, not UI code, so one seam covers both UIs, toolbar actions, and part
   actions.
 - Most autopilots have no "Start" method. The UI calls `module.Users.Add(window)` /
-  `Users.Clear()`. A single generic seam on `UserPool.Add` / `UserPool.Clear`
-  (`ComputerModule.cs:357/373`), filtered by `_controlledModule` type **and** by
-  `user is DisplayModule`, could cover Ascent, Rendezvous, Docking, Autostage, and RCS in one
-  place.
+  `Users.Clear()` (dev) or `Users.Remove(window)` (2.15.4). **Generic seam (implemented,
+  `src/UserPoolBridge.cs`):** prefixes on `UserPool.Add/Remove/Clear` (`ComputerModule.cs:357/365/373`,
+  *2.15.4* `:323/331/339`). A call is delayed only if all of these hold:
+  - the pool's `_controlledModule` is on the allowlist (currently Rendezvous AP, Docking AP)
+  - the call changes `Enabled` (engage while off; disengage while on, and `Remove` only when it
+    empties the pool)
+  - it's a player command (`IsPlayerCommand`)
+  - for Add/Remove, the user is a `DisplayModule` (not an autopilot or kOS binding)
+
+  `Clear()` has no user, so the allowlisted modules' non-physics internal stop paths are wrapped
+  in Bypass: `DockingAutopilot.EndDocking/OnPartCouple`, `RendezvousAutopilot.Finish`,
+  `AutopilotModule.StopAfterStepFailures`, `MechJebCore.ReloadAllComputerModules`, and *2.15.4*
+  `DockingGuidance.OnModuleDisabled` (closing the window disengages instantly).
+  - **2.15.x windows** re-issue Add/Remove from `OnGUI` every frame until `Enabled` changes, so
+    an identical command already in flight is swallowed and the "no connection" message is
+    throttled.
+  - **To extend:** add the module to `UserPoolBridge.Delayed`, grep `../MechJeb2` for every
+    `Users.Add/Remove/Clear` on it in both versions, and Bypass-wrap any internal caller outside
+    the physics step.
+  - **Known quirk (2.15.4):** the Rendezvous window's automatic disengage when the target is in
+    another SOI (`RendezvousAutopilotWindow.cs:26`) runs in `OnGUI`, so it's delayed like a
+    click.
 - The Testing instance runs **2.15.4**. Anything patched must be checked against both until the
   bridge drops 2.15.x support.

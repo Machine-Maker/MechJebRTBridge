@@ -25,6 +25,8 @@ locally and in real time, the way an on-board autopilot would.
 | SmartASS | Every attitude button (`Engage`) | Mode tabs (ORBIT/SURFACE/…), since they only switch which buttons are shown |
 | Node Executor | Execute one node, Execute all nodes | Abort (MechJeb calls it internally; it also serves as the instant local cutoff) |
 | Landing Autopilot | Land at target, Land somewhere | Stop landing (MechJeb calls it internally at touchdown) |
+| Rendezvous Autopilot | Engage, Disengage | The autopilot stopping itself (arrived, failed) |
+| Docking Autopilot | Engage, Disengage | The autopilot stopping itself (docked, target lost); closing the 2.15.x Docking window |
 
 Everything else in MechJeb still acts instantly. The full per-feature status is in
 [`docs/MECHJEB_COVERAGE.md`](docs/MECHJEB_COVERAGE.md). The design and roadmap are in
@@ -99,18 +101,30 @@ dotnet build MechJebRTBridge.csproj -c Release
 
 The build writes the DLL to the repo's `GameData/MechJebRTBridge/Plugins/` (for packaging) and,
 when `KSPBT_GameRoot` is set, also copies it into that install's GameData. The version comes
-from the latest git tag (MinVer). Pushing a `v*.*.*` tag runs the release workflow.
+from the latest git tag (MinVer).
+
+Pushing a `v*.*.*` tag runs the release workflow (`.github/workflows/release.yml`). It builds
+against the CKAN-released MechJeb2, RemoteTech and Harmony2, attaches
+`MechJebRTBridge-vX.Y.Z.zip` and `MechJebRTBridge.version` to a GitHub release, and commits a
+`.ckan` file to the [KSP-Mods-CKAN](https://github.com/Machine-Maker/KSP-Mods-CKAN) meta repo.
+That last step needs the `CKAN_META_TOKEN` repo secret: a token with Contents write access to
+KSP-Mods-CKAN.
 
 ## Install
 
-Copy `GameData/MechJebRTBridge/` into your KSP `GameData/`, so that the DLL ends up at
+Via CKAN: add the meta repo with
+`ckan repo add Machine-Maker-Mods https://github.com/Machine-Maker/KSP-Mods-CKAN/archive/main.tar.gz`,
+then `ckan install MechJebRTBridge`.
+
+Manually: the release zip holds `MechJebRTBridge-vX.Y.Z/GameData/MechJebRTBridge/`. Copy that
+`GameData/MechJebRTBridge/` into your KSP `GameData/`, so that the DLL ends up at
 `GameData/MechJebRTBridge/Plugins/MechJebRTBridge.dll`. Requires MechJeb2, RemoteTech, and
 Harmony (000_Harmony).
 
 ## Known limitations
 
-- **Only SmartASS, Node Executor, and Landing are delayed** (see *Supported commands*). Ascent,
-  Rendezvous, Docking, Translatron, staging, and the rest still act instantly.
+- **Only SmartASS, Node Executor, Landing, Rendezvous, and Docking are delayed** (see *Supported
+  commands*). Ascent, Translatron, staging, and the rest still act instantly.
 - MechJeb part actions bound to an action group (SmartASS modes, land somewhere, PANIC, …) are
   delayed once, by RemoteTech's action-group delay. The bridge doesn't add a second delay.
 - Only player clicks are delayed. MechJeb's own internal calls (an autopilot starting its node

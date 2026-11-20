@@ -63,6 +63,30 @@ namespace MechJebRTBridge
             Patch(harmony, "RemoteTech.FlightComputer.Commands.ActionGroupCommand:Pop",
                   prefix: bypassPrefix, finalizer: bypassFinalizer);
 
+            // Generic seam: autopilots engaged/disengaged via their Users pool (UserPoolBridge
+            // allowlist: Rendezvous, Docking). Declared-method lookup with exact parameters,
+            // because UserPool's Add/Remove/Clear hide List<object>'s.
+            Patch(harmony, AccessTools.DeclaredMethod(typeof(MuMech.UserPool), "Add", new[] { typeof(object) }),
+                  "MuMech.UserPool:Add", prefix: H(typeof(UserPoolBridge), nameof(UserPoolBridge.AddPrefix)));
+            Patch(harmony, AccessTools.DeclaredMethod(typeof(MuMech.UserPool), "Remove", new[] { typeof(object) }),
+                  "MuMech.UserPool:Remove", prefix: H(typeof(UserPoolBridge), nameof(UserPoolBridge.RemovePrefix)));
+            Patch(harmony, AccessTools.DeclaredMethod(typeof(MuMech.UserPool), "Clear", Type.EmptyTypes),
+                  "MuMech.UserPool:Clear", prefix: H(typeof(UserPoolBridge), nameof(UserPoolBridge.ClearPrefix)));
+
+            // Internal stop paths for the UserPool-seam autopilots that can run outside the
+            // physics step. Their Users.Clear/Remove is on-board, never a player command.
+            // Names differ between MechJeb versions; missing ones are logged and skipped.
+            foreach (string stop in new[]
+                     {
+                         "MuMech.MechJebModuleDockingAutopilot:EndDocking",       // docked / target lost
+                         "MuMech.MechJebModuleDockingAutopilot:OnPartCouple",     // docking event
+                         "MuMech.MechJebModuleRendezvousAutopilot:Finish",        // dev
+                         "MuMech.AutopilotModule:StopAfterStepFailures",          // dev
+                         "MuMech.MechJebCore:ReloadAllComputerModules",           // settings reload
+                         "MuMech.MechJebModuleDockingGuidance:OnModuleDisabled",  // 2.15.x: window closed
+                     })
+                Patch(harmony, stop, prefix: bypassPrefix, finalizer: bypassFinalizer);
+
             Debug.Log("[MJ-RT Bridge] Initialised.");
         }
 
@@ -72,9 +96,21 @@ namespace MechJebRTBridge
         private static void Patch(Harmony harmony, string target,
             HarmonyMethod prefix = null, HarmonyMethod postfix = null, HarmonyMethod finalizer = null)
         {
+            MethodBase method;
+            try { method = AccessTools.Method(target); }
+            catch (Exception e)
+            {
+                Debug.LogError($"[MJ-RT Bridge] failed to resolve {target} (skipped): {e.Message}");
+                return;
+            }
+            Patch(harmony, method, target, prefix, postfix, finalizer);
+        }
+
+        private static void Patch(Harmony harmony, MethodBase method, string target,
+            HarmonyMethod prefix = null, HarmonyMethod postfix = null, HarmonyMethod finalizer = null)
+        {
             try
             {
-                MethodBase method = AccessTools.Method(target);
                 if (method == null)
                 {
                     Debug.LogWarning($"[MJ-RT Bridge] patch target not found (skipped): {target}");

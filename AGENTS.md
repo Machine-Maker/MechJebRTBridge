@@ -56,6 +56,7 @@ src/BridgeCore.cs           shared plumbing: Bypass guard, RT helpers, module re
 src/SmartAssBridge.cs       seam: SmartASS Engage + UI highlight hold + sanctioned-pilot hold
 src/NodeExecutorBridge.cs   seam: ExecuteOneNode / ExecuteAllNodes
 src/LandingBridge.cs        seam: LandAtPositionTarget / LandUntargeted
+src/UserPoolBridge.cs       generic seam: UserPool.Add/Remove/Clear for allowlisted autopilots (Rendezvous, Docking)
 docs/COMMAND_DELAY_PLAN.md  design + patterns + roadmap
 docs/MECHJEB_COVERAGE.md    coverage matrix: every MechJeb feature vs. RT delay, with status
 GameData/MechJebRTBridge/   packaging root (Plugins/ and .version are build outputs, gitignored)
@@ -91,6 +92,16 @@ Follow plan doc §6 and copy the shape of an existing seam:
 - Versioning comes from git tags via MinVer (`v0.1.0` → 0.1.0, with `MinVerTagPrefix=v`).
   Between tags the version is e.g. `0.1.1-alpha.0.N`. Releases are cut by pushing a `v*.*.*`
   tag (`.github/workflows/release.yml`).
+- CI: `build.yml` (every branch push and PR) and `release.yml` (tags) compile against the
+  **CKAN-released** MechJeb2/RemoteTech/Harmony2, not your local install. Code that needs a
+  MechJeb `dev`-only API builds locally but fails CI.
+- The release zip is `MechJebRTBridge-vX.Y.Z/GameData/MechJebRTBridge/…`. `assemble-release`
+  names the zip *and* its wrapper folder from `output-file-name`. The `.ckan` install stanza
+  must stay `"find": "GameData/MechJebRTBridge"`: a bare `MechJebRTBridge` matches a wrapper
+  folder of the same name and installs to `GameData/MechJebRTBridge/GameData/…`.
+- The `.ckan` `download_hash.sha256` must be uppercase hex. CKAN rejects lowercase.
+- The CKAN publish step pushes to `Machine-Maker/KSP-Mods-CKAN` (branch `main`) using the
+  `CKAN_META_TOKEN` secret.
 - Don't set `<Version>` on the `KSPVersionFile` item from `$(MinVer*)` properties. They're
   empty at evaluation time and produce `"VERSION": ".."`. Leave it unset and KSPBuildTools
   fills it from `$(FileVersion)` after MinVer runs.
