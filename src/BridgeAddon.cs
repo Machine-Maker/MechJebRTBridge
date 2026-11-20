@@ -42,6 +42,20 @@ namespace MechJebRTBridge
             Patch(harmony, "MuMech.MechJebModuleLandingAutopilot:LandUntargeted",
                   prefix: H(typeof(LandingBridge), nameof(LandingBridge.LandUntargetedPrefix)));
 
+            // Commands that run other patched commands internally: the whole thing is one
+            // command (or no command at all), so its sub-calls must not be delayed separately.
+            //   - Translatron PANIC stops other autopilots (SmartASS.Engage(OFF), StopLanding, …).
+            //     PANIC itself isn't delayed yet (see docs/MECHJEB_COVERAGE.md).
+            //   - SmartASS.OnLoad re-engages the saved target when the vessel loads.
+            // Physics-step callers (running autopilots, kOS) are excluded by
+            // BridgeCore.IsPlayerCommand instead.
+            var bypassPrefix    = H(typeof(BridgeCore), nameof(BridgeCore.BypassPrefix));
+            var bypassFinalizer = H(typeof(BridgeCore), nameof(BridgeCore.BypassFinalizer));
+            Patch(harmony, "MuMech.MechJebModuleTranslatron:PanicSwitch",
+                  prefix: bypassPrefix, finalizer: bypassFinalizer);
+            Patch(harmony, "MuMech.MechJebModuleSmartASS:OnLoad",
+                  prefix: bypassPrefix, finalizer: bypassFinalizer);
+
             Debug.Log("[MJ-RT Bridge] Initialised.");
         }
 
@@ -49,7 +63,7 @@ namespace MechJebRTBridge
             new HarmonyMethod(t, methodName);
 
         private static void Patch(Harmony harmony, string target,
-            HarmonyMethod prefix = null, HarmonyMethod postfix = null)
+            HarmonyMethod prefix = null, HarmonyMethod postfix = null, HarmonyMethod finalizer = null)
         {
             try
             {
@@ -59,7 +73,7 @@ namespace MechJebRTBridge
                     Debug.LogWarning($"[MJ-RT Bridge] patch target not found (skipped): {target}");
                     return;
                 }
-                harmony.Patch(method, prefix: prefix, postfix: postfix);
+                harmony.Patch(method, prefix: prefix, postfix: postfix, finalizer: finalizer);
                 Debug.Log($"[MJ-RT Bridge] patched {target}");
             }
             catch (Exception e)

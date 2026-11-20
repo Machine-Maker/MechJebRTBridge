@@ -121,7 +121,7 @@ and its status. Update that file, not this one, when coverage changes.
 1. **Find the command boundary** — the public method a UI button/`KSPAction` invokes that
    changes vessel state (`Users.Add/Clear`, `Enabled=`, or a setpoint write). Confirm it
    *latches* (so the loop is local) and identify the display-only UI field, if any.
-2. **Harmony-prefix it.** Guard: `_bypass` → run; `!IsRemoteTechEnabled()` → run;
+2. **Harmony-prefix it.** Guard: `!BridgeCore.IsPlayerCommand(...)` → run; `!IsRemoteTechEnabled()` → run;
    `HasLocalControl` → run. Otherwise snapshot params, queue via RT, revert UI field, post
    cue, return `false`.
 3. **Serialize the intent** into the command node (§8 persistence) or stash it by token.
@@ -194,8 +194,10 @@ A running program's parameter changes are **new delayed commands**, not free loc
 
 - **Command methods have internal callers.** `ExecuteOneNode/AllNodes`, `LandUntargeted` and
   `SmartASS.Engage` are also called by running autopilots (Rendezvous, Ascent, Hoverslam,
-  Translatron PANIC) and by kOS. A bare prefix delays those too. Use the `controller` argument
-  (`is DisplayModule` = player UI) or caller detection. See `MECHJEB_COVERAGE.md` §5.
+  Translatron PANIC, SmartASS `OnLoad`) and by kOS. A bare prefix delays those too. Start every
+  seam prefix with `if (!BridgeCore.IsPlayerCommand(...)) return true;`. It treats physics-step
+  calls (`Time.inFixedTimeStep`) and Bypass regions as internal. A new non-physics-step internal
+  caller needs a Bypass wrapper in `BridgeAddon`. See `MECHJEB_COVERAGE.md` §5.1.
 - **RT-delayed action groups re-enter the bridge.** MechJeb `KSPAction`s bound to an action group
   fire from RT's `ActionGroupCommand.Pop`, after RT's delay, and the bridge delays them again.
 

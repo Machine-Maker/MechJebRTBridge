@@ -96,7 +96,7 @@ A delayed action group ends up calling `Vessel.ActionGroups.ToggleGroup`, which 
 
 | MechJeb feature | Replaces by hand | Player command (seam) | Status |
 |---|---|---|---|
-| Execute next node / all nodes (Maneuver Planner, Node Editor, Rendezvous Planner, toolbar menu) | Steering + throttle for the burn | `MechJebModuleNodeExecutor.ExecuteOneNode(obj)` (`:133`), `ExecuteAllNodes(obj)` (`:141`) | ✅ for UI callers; 🐞 for internal callers (§5.1) |
+| Execute next node / all nodes (Maneuver Planner, Node Editor, Rendezvous Planner, toolbar menu) | Steering + throttle for the burn | `MechJebModuleNodeExecutor.ExecuteOneNode(obj)` (`:133`), `ExecuteAllNodes(obj)` (`:141`) | ✅ (player UI only; internal callers run locally, §5.1) |
 | Abort node execution | Throttle cut | `NodeExecutor.Abort()` (`:174`) | ⚠️ unpatched by design (MechJeb calls it internally) |
 | Create / edit / delete maneuver nodes (Planner, Node Editor, aerobrake nodes) | Node editing | `PlaceManeuverNode`, `RemoveSelf` | — (RT doesn't delay node editing) |
 | Node executor auto-warp | Time warp | `NodeUi.AutowarpToggle` | — |
@@ -108,25 +108,25 @@ A delayed action group ends up calling `Vessel.ActionGroups.ToggleGroup`, which 
 | Ascent AP engage (classic + PSG) | Staging, steering, throttle | `MechJebModuleAscentMenu.Engage()` (`:88`) → `_autopilot.Users.Add`; part action `OnAscentAPToggleAction` (`MechJebCore.cs:86`) | ⬜ |
 | Ascent AP disengage | — | `menu._autopilot.Users.Clear()` (`UI/AscentView.cs:145`) | ⬜ (cancellation) |
 | Ascent settings (target alt, inclination, pitch program, PSG stages, autostage, auto-deploy, …) | — | field edits | ⚠️ setpoint. Only matters while engaged |
-| Ascent circularisation burn | — | Internal: `Core.Node.ExecuteOneNode(this)` (`AscentClassicAutopilot.cs:362`; *2.15.4* `AscentBaseAutopilot.cs:281`) | 🐞 (§5.1) |
+| Ascent circularisation burn | — | Internal: `Core.Node.ExecuteOneNode(this)` (`AscentClassicAutopilot.cs:362`; *2.15.4* `AscentBaseAutopilot.cs:281`) | — runs locally (fixed, §5.1) |
 
 ### 3.6 Landing / hover
 
 | MechJeb feature | Replaces by hand | Player command (seam) | Status |
 |---|---|---|---|
-| Land at target / land somewhere | Steering, throttle, staging, chutes, gear | `MechJebModuleLandingAutopilot.LandAtPositionTarget(obj)` (`:181`), `LandUntargeted(obj)` (`:214`); part actions `Land somewhere` / `Land at KSC` (`MechJebCore.cs:134-138`) | ✅ UI; 🐞 part actions (§5.2) and Translatron PANIC (§5.1) |
+| Land at target / land somewhere | Steering, throttle, staging, chutes, gear | `MechJebModuleLandingAutopilot.LandAtPositionTarget(obj)` (`:181`), `LandUntargeted(obj)` (`:214`); part actions `Land somewhere` / `Land at KSC` (`MechJebCore.cs:134-138`) | ✅ UI; 🐞 part actions (§5.2) |
 | Abort autoland | Throttle cut | `StopLanding()` (`:233`) | ⚠️ unpatched by design (called at touchdown) |
 | Landing target pick / coordinates / site | — | `Core.Target.*` | — |
 | Landing autopilot deploys chutes / stages / extends gear | PAW deploy, staging, gear AG | Internal (`LandingAutopilot.cs:477, 496`) | — (on-board automation) |
 | Hoverslam / suicide burn | Steering, throttle | `MechJebModuleHoverslamAutopilot.ToggleEnabled()` (`:17`, via info-item action `HoverslamAutopilot.ToggleEnabled`) | ⬜ |
-| Hoverslam engaging SmartASS | — | Internal `Core.SmartASS.Engage()` (`Hoverslam:233`) | 🐞 (§5.1) |
+| Hoverslam engaging SmartASS | — | Internal `Core.SmartASS.Engage()` (`Hoverslam:233`) | — runs locally (fixed, §5.1) |
 
 ### 3.7 Rendezvous / docking
 
 | MechJeb feature | Replaces by hand | Player command (seam) | Status |
 |---|---|---|---|
 | Rendezvous AP engage / disengage | Burns, steering | `Autopilot.Users.Add(window)` / `Users.Clear()` (`UI/RendezvousAutopilotView.cs:47/55`) | ⬜ |
-| Rendezvous AP running node burns | — | Internal `Core.Node.ExecuteAllNodes(this)` (`RendezvousAutopilot.cs:237`) | 🐞 (§5.1) |
+| Rendezvous AP running node burns | — | Internal `Core.Node.ExecuteAllNodes(this)` (`RendezvousAutopilot.cs:237`) | — runs locally (fixed, §5.1) |
 | Rendezvous Planner node execution | Steering + throttle | via `NodeUi.ExecuteButtons` → `ExecuteOneNode/AllNodes(guidance)` | ✅ |
 | Docking AP engage / disengage | RCS translate, steering, SAS/RCS AG | `Ap.Users.Add(guidance)` / `Users.Clear()` (`UI/DockingGuidanceView.cs:173/175`) | ⬜ |
 | Docking speed limits, target port | — | field edits / target | ⚠️ setpoint / — |
@@ -172,7 +172,7 @@ A delayed action group ends up calling `Vessel.ActionGroups.ToggleGroup`, which 
 | Bucket | Count | Items |
 |---|---|---|
 | ✅ Delayed | 3 seams | SmartASS `Engage`; NodeExecutor `ExecuteOneNode/AllNodes`; Landing `LandAtPositionTarget/LandUntargeted` |
-| 🐞 Wrongly delayed | 5 paths | Ascent circularise, Rendezvous AP burns, Hoverslam→SmartASS, Translatron PANIC→SmartASS/Landing, MechJeb part actions via delayed action groups. Also kOS (§5.3) |
+| 🐞 Wrongly delayed | 1 path | MechJeb part actions fired by RT-delayed action groups (§5.2) |
 | ⬜ Clean gaps | ~14 | Ascent AP, timed launch, Rendezvous AP, Docking AP, Hoverslam, Translatron mode + PANIC, SmartRCS, RCS balancer, Autostage + Autostage-once, Rover drive/stop, auto-deploy toggles, extend/retract all |
 | ⚠️ Needs design | — | Cancellations (`Abort`, `StopLanding`, `Users.Clear`); setpoint field writes (thrust limiters, Translatron speed, rover, ascent/docking settings); menu `Enabled` checkbox |
 | — Not delayed by design | — | Node planning/editing, warp, targeting, info/predictions/settings, on-board automation MechJeb runs after a command |
@@ -181,25 +181,29 @@ A delayed action group ends up calling `Vessel.ActionGroups.ToggleGroup`, which 
 
 ## 5. Bugs found in the current seams
 
-### 5.1 Internal callers get delayed (🐞, affects 2.15.4 and dev)
+### 5.1 Internal callers got delayed (✅ fixed)
 
-The patched methods are also called by **MechJeb programs that are already running on board**.
-Without local control, the bridge prefix queues those calls with a full light-speed delay:
+The patched methods are also called by **MechJeb programs already running on board**. Before the
+fix, without local control, the bridge prefix queued those calls with a full light-speed delay:
 
-| Caller | Call | Effect |
+| Caller | Call | Effect before the fix |
 |---|---|---|
-| Rendezvous AP | `Core.Node.ExecuteAllNodes(this)` (`RendezvousAutopilot.cs:237`, *2.15.4* `:54`) | every rendezvous burn starts one signal delay late |
-| Ascent AP | `Core.Node.ExecuteOneNode(this)` (`AscentClassicAutopilot.cs:362`, *2.15.4* `AscentBaseAutopilot.cs:281`) | circularisation burn starts one delay late, possibly after apoapsis |
-| Hoverslam AP | `Core.SmartASS.Engage()` (`Hoverslam:233`) | attitude hold engages late |
-| Translatron PANIC | `Core.SmartASS.Engage()` (`Translatron.cs:106`), `LandUntargeted(this)` (`:215`, *2.15.4* `:273`) | the abort's attitude release and landing hand-off arrive late |
+| Rendezvous AP | `Core.Node.ExecuteAllNodes(this)` (`RendezvousAutopilot.cs:237`, *2.15.4* `:54`) | every rendezvous burn started one signal delay late |
+| Ascent AP | `Core.Node.ExecuteOneNode(this)` (`AscentClassicAutopilot.cs:362`, *2.15.4* `AscentBaseAutopilot.cs:281`) | circularisation burn started one delay late, possibly after apoapsis |
+| Hoverslam AP | `Core.SmartASS.Engage()` (`Hoverslam:233`) | hold-upright engaged late |
+| SmartASS itself | `Engage(false)` in `OnFixedUpdate` (`SmartASS.cs:364`, dev only) when another autopilot hands attitude back | re-engage arrived late |
+| Translatron PANIC | `Core.SmartASS.Engage()` / `StopLanding` via `StopOtherAutopilots` (`Translatron.cs:106`); `LandUntargeted(this)` from `Drive` (`:215`, *2.15.4* `:273`) | parts of the abort arrived late, out of step with the rest |
+| SmartASS load | `Engage(false)` in `OnLoad` (`SmartASS.cs:130`, *2.15.4* `:205`) | a saved attitude hold on a vessel loaded without a connection was restored one delay late |
 
-**Proposed fix:** `ExecuteOneNode`, `ExecuteAllNodes`, `LandAtPositionTarget` and `LandUntargeted`
-take an `object controller`. UI windows pass a `DisplayModule` (ManeuverPlanner, NodeEditor,
-RendezvousGuidance, LandingGuidance). Autopilots pass themselves (plain `ComputerModule`). kOS
-passes a binding object. So delay only when `controller is DisplayModule`. `SmartASS.Engage` has
-no controller arg, so patch the internal callers instead (a prefix/postfix setting
-`BridgeCore.Bypass` around `Hoverslam` / `Translatron.StopOtherAutopilots`), or check the call
-stack. Verify the controller types on 2.15.4 too before relying on them.
+**Fix** (`BridgeCore.IsPlayerCommand`, `BridgeAddon`):
+- Every internal call above except PANIC's click path and `OnLoad` runs inside the physics step
+  (`Drive` / `OnFixedUpdate`). kOS scripts run there too. Player clicks never do: IMGUI `OnGUI` on
+  2.15.x, uGUI events in `Update` on dev. So seams delay only when `!Time.inFixedTimeStep`.
+  Skipped calls log `internal call (physics step), not delayed`.
+- `Translatron.PanicSwitch` and `SmartASS.OnLoad` are wrapped with a Bypass prefix/finalizer, so
+  calls they make are never delayed on their own.
+- The `controller is DisplayModule` idea was rejected. Translatron is a `DisplayModule` in 2.15.4,
+  and `SmartASS.Engage` has no controller argument.
 
 ### 5.2 Double delay through action groups (🐞)
 
@@ -210,13 +214,12 @@ group key (`ActionGroupCommand`). When it pops, `ToggleGroup` fires the MechJeb 
 **Proposed fix:** set `Bypass` while RT pops an `ActionGroupCommand` (Harmony prefix/finalizer on
 `RemoteTech.FlightComputer.Commands.ActionGroupCommand.Pop`), or detect that RT is the caller.
 
-### 5.3 kOS scripts get delayed (🐞, if kOS + MechJebKos installed)
+### 5.3 kOS scripts got delayed (✅ fixed by §5.1)
 
 `MechJebKos` calls `Engage`, `ExecuteOneNode/AllNodes`, `Users.Add/Clear` directly. A kOS
 script runs on the vessel's own CPU, so its MechJeb calls are on-board and shouldn't be delayed
-(RT/kOS integration delays the *typed* commands already). The `controller is DisplayModule`
-filter in §5.1 fixes the node/landing calls. `SmartASS.Engage` from kOS needs the same caller
-detection.
+(RT/kOS integration delays the *typed* commands already). kOS executes in `FixedUpdate`, so the
+§5.1 physics-step check leaves its calls undelayed. This hasn't been tested in game with kOS.
 
 ---
 

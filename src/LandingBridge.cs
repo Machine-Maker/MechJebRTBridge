@@ -45,7 +45,7 @@ namespace MechJebRTBridge
         {
             try
             {
-                if (BridgeCore.Bypass) return true;
+                if (!BridgeCore.IsPlayerCommand($"Landing {mode}")) return true;
 
                 Vessel vessel = FlightGlobals.ActiveVessel;
                 if (vessel == null || !BridgeCore.NeedsDelay(vessel)) return true;

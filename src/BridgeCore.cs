@@ -17,7 +17,45 @@ namespace MechJebRTBridge
         // signal delay, so the Harmony prefix lets that call through without re-queuing it.
         // [ThreadStatic] because Unity can call flight-control callbacks off the main thread
         // in some versions; the flag must not bleed across threads.
+        // Also set while a player command that fans out into other commands runs (e.g. Translatron
+        // PANIC calling SmartASS.Engage / StopLanding), so its sub-steps aren't delayed separately.
         [ThreadStatic] internal static bool Bypass;
+
+        // ---- player-command detection ---------------------------------------
+        // The patched methods are also called by MechJeb itself: running autopilots call
+        // ExecuteAllNodes (Rendezvous), ExecuteOneNode (Ascent circularisation), SmartASS.Engage
+        // (Hoverslam), LandUntargeted (Translatron PANIC); kOS scripts call them too. Those are
+        // on-board actions and must not be delayed.
+        //
+        // They all run inside the physics step (ComputerModule.Drive / OnFixedUpdate, kOS's CPU
+        // tick), while a player's click arrives from the UI: IMGUI OnGUI in MechJeb 2.15.x, uGUI
+        // events in Update on MechJeb dev. So "inside FixedUpdate" = internal. This is more robust
+        // than checking the `controller` argument, which is a DisplayModule for Translatron in
+        // 2.15.4 and doesn't exist on SmartASS.Engage.
+        internal static bool IsPlayerCommand(string what)
+        {
+            if (Bypass) return false;
+            if (Time.inFixedTimeStep)
+            {
+                Debug.Log($"[MJ-RT Bridge] {what}: internal call (physics step), not delayed");
+                return false;
+            }
+            return true;
+        }
+
+        // Harmony prefix/finalizer pair that sets Bypass for the duration of a wrapped method
+        // (restoring the previous value, so it nests safely inside RtPop's own Bypass).
+        internal static void BypassPrefix(out bool __state)
+        {
+            __state = Bypass;
+            Bypass  = true;
+        }
+
+        internal static Exception BypassFinalizer(Exception __exception, bool __state)
+        {
+            Bypass = __state;
+            return __exception;
+        }
 
         // ---- RT connection helpers ------------------------------------------
 

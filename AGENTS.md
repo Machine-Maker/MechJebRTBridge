@@ -69,7 +69,9 @@ Sibling checkouts (reference only, not modified by this repo):
 ## Adding a seam
 
 Follow plan doc §6 and copy the shape of an existing seam:
-1. Harmony prefix → `if (BridgeCore.Bypass) return true;` → `NeedsDelay` → `IsConnected`.
+1. Harmony prefix → `if (!BridgeCore.IsPlayerCommand("…")) return true;` → `NeedsDelay` →
+   `IsConnected`. Then grep `../MechJeb2` for **every caller** of the method. Any internal caller
+   outside the physics step needs a Bypass wrapper in `BridgeAddon` (see plan doc §10).
 2. Stash the intent by token **and** serialize enough into the command node to rebuild it after
    a reload.
 3. `public static bool RtPop(ConfigNode)` (it must be public: RemoteTech calls it by reflection).

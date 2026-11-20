@@ -111,10 +111,12 @@ Harmony (000_Harmony).
 
 - **Only SmartASS, Node Executor, and Landing are delayed** (see *Supported commands*). Ascent,
   Rendezvous, Docking, Translatron, staging, and the rest still act instantly.
-- **Known bug: internal MechJeb calls are delayed too.** When the Rendezvous AP runs its burns,
-  the Ascent AP circularises, Hoverslam engages SmartASS, or Translatron PANIC hands off to
-  landing, those calls also wait a signal delay. MechJeb part actions bound to action groups get
-  delayed twice. See `docs/MECHJEB_COVERAGE.md` §5.
+- **Known bug: double delay through action groups.** MechJeb part actions (SmartASS modes, land
+  somewhere, …) bound to an action group are delayed by RemoteTech and then again by the bridge.
+  See `docs/MECHJEB_COVERAGE.md` §5.2.
+- Only player clicks are delayed. MechJeb's own internal calls (an autopilot starting its node
+  burns, Hoverslam engaging SmartASS, PANIC, restoring SmartASS on load) and kOS scripts run
+  locally.
 - **Cancellations aren't delayed.** Node Executor Abort and Stop Landing act instantly.
 - **Persistence across save/load.** Each command node carries a small payload (`SATarget` +
   `SAResetPID`, `NEMode`, `LAMode`). If the in-memory pending map is lost on a reload, `RtPop`
