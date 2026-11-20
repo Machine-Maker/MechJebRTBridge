@@ -100,6 +100,8 @@ Follow plan doc §6 and copy the shape of an existing seam:
   must stay `"find": "GameData/MechJebRTBridge"`: a bare `MechJebRTBridge` matches a wrapper
   folder of the same name and installs to `GameData/MechJebRTBridge/GameData/…`.
 - The `.ckan` `download_hash.sha256` must be uppercase hex. CKAN rejects lowercase.
+- `release.yml` runs on `ubuntu-24.04`, not `ubuntu-latest`. `setup-ckan` installs CKAN's
+  `.deb`, which depends on `mono-runtime`, and that isn't installable on ubuntu-26.04.
 - The CKAN publish step pushes to `Machine-Maker/KSP-Mods-CKAN` (branch `main`) using the
   `CKAN_META_TOKEN` secret.
 - Don't set `<Version>` on the `KSPVersionFile` item from `$(MinVer*)` properties. They're

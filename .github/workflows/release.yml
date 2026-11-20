@@ -6,7 +6,9 @@ on:
 
 jobs:
   release:
-    runs-on: ubuntu-latest
+    # Pinned, not ubuntu-latest: CKAN's .deb needs mono-runtime, which ubuntu-26.04 doesn't ship.
+    # Matches the image KSPBuildTools' reusable build workflow uses.
+    runs-on: ubuntu-24.04
     permissions:
       contents: write
 
