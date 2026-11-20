@@ -199,7 +199,9 @@ A running program's parameter changes are **new delayed commands**, not free loc
   calls (`Time.inFixedTimeStep`) and Bypass regions as internal. A new non-physics-step internal
   caller needs a Bypass wrapper in `BridgeAddon`. See `MECHJEB_COVERAGE.md` §5.1.
 - **RT-delayed action groups re-enter the bridge.** MechJeb `KSPAction`s bound to an action group
-  fire from RT's `ActionGroupCommand.Pop`, after RT's delay, and the bridge delays them again.
+  fire from RT's `ActionGroupCommand.Pop`, after RT's delay. `BridgeAddon` wraps that Pop in Bypass
+  so they aren't delayed twice. Any other RT command that can fire MechJeb code (e.g. a future
+  `EventCommand` path to a MechJeb `KSPEvent`) needs the same wrapper.
 
 - The UI sets the state field (`target`) **before** calling the command (`Engage`), so the
   prefix already sees the new value — track the *previous* value out-of-band (per-frame

@@ -57,7 +57,16 @@ Status legend:
 computer (`f.DelayedTarget`). It doesn't stop KSP's target from changing instantly.
 
 A delayed action group ends up calling `Vessel.ActionGroups.ToggleGroup`, which fires **every**
-`KSPAction` bound to that group, including MechJeb's own actions (§5).
+`KSPAction` bound to that group, including MechJeb's own actions (§5.2).
+
+**Raw flight input (WASD/QE/IJKL/HN, Shift/Ctrl/Z/X throttle, wheel keys) is delayed but never
+shown in the RT queue window.** Each physics frame, `OnFlyByWirePre` copies the whole
+`FlightCtrlState` into a private `_flightCtrlQueue` and replays the frame from `Delay` seconds ago.
+The queue window only lists `ICommand`s. So a key held for 2 s acts 2 s long, one delay later. The
+navball throttle gauge moves at once (it shows the local input), but the engines follow the delayed
+value. While a MechJeb attitude program is active, MechJeb yields an axis to "user input" only when
+the *delayed* input on that axis is non-zero (`AttitudeController.Drive`, *2.15.4* `:394-424`), so
+stick input still takes over, but late.
 
 ---
 
@@ -68,7 +77,7 @@ A delayed action group ends up calling `Vessel.ActionGroups.ToggleGroup`, which 
 | MechJeb feature | Replaces by hand | Player command (seam) | Status |
 |---|---|---|---|
 | SmartASS (all modes, incl. EXECUTE / advanced / surface angles) | Steering / stock SAS modes | `MechJebModuleSmartASS.Engage(bool)` (`:190`) | ✅ |
-| SmartASS via part action / action group (`Orbit Prograde`, … `Deactivate SmartACS`) | Steering | `MechJebCore.On*Action` → `EngageSmartASSOrbitalControl` → `Engage` (`MechJebCore.cs:110-132`) | 🐞 double delay (§5.2) |
+| SmartASS via part action / action group (`Orbit Prograde`, … `Deactivate SmartACS`) | Steering | `MechJebCore.On*Action` → `EngageSmartASSOrbitalControl` → `Engage` (`MechJebCore.cs:110-132`) | ✅ delayed once, by RT's action group (§5.2) |
 | Attitude hold during signal loss | (RT neutralises controls) | Bridge sanctioned pilot (`SmartAssBridge.CaptureAttitudePostfix`) | ✅ attitude only |
 | Attitude Adjustment (PID / tuning) | — (settings) | field edits | — |
 | Spinup controller | Roll input | Started only by the PSG autopilot (`AssertStart` `:81`), never directly by the player | — (internal) |
@@ -114,7 +123,7 @@ A delayed action group ends up calling `Vessel.ActionGroups.ToggleGroup`, which 
 
 | MechJeb feature | Replaces by hand | Player command (seam) | Status |
 |---|---|---|---|
-| Land at target / land somewhere | Steering, throttle, staging, chutes, gear | `MechJebModuleLandingAutopilot.LandAtPositionTarget(obj)` (`:181`), `LandUntargeted(obj)` (`:214`); part actions `Land somewhere` / `Land at KSC` (`MechJebCore.cs:134-138`) | ✅ UI; 🐞 part actions (§5.2) |
+| Land at target / land somewhere | Steering, throttle, staging, chutes, gear | `MechJebModuleLandingAutopilot.LandAtPositionTarget(obj)` (`:181`), `LandUntargeted(obj)` (`:214`); part actions `Land somewhere` / `Land at KSC` (`MechJebCore.cs:134-138`) | ✅ UI; part actions delayed once, by RT's action group (§5.2) |
 | Abort autoland | Throttle cut | `StopLanding()` (`:233`) | ⚠️ unpatched by design (called at touchdown) |
 | Landing target pick / coordinates / site | — | `Core.Target.*` | — |
 | Landing autopilot deploys chutes / stages / extends gear | PAW deploy, staging, gear AG | Internal (`LandingAutopilot.cs:477, 496`) | — (on-board automation) |
@@ -172,7 +181,7 @@ A delayed action group ends up calling `Vessel.ActionGroups.ToggleGroup`, which 
 | Bucket | Count | Items |
 |---|---|---|
 | ✅ Delayed | 3 seams | SmartASS `Engage`; NodeExecutor `ExecuteOneNode/AllNodes`; Landing `LandAtPositionTarget/LandUntargeted` |
-| 🐞 Wrongly delayed | 1 path | MechJeb part actions fired by RT-delayed action groups (§5.2) |
+| 🐞 Wrongly delayed | 0 | (§5.1–5.3 fixed) |
 | ⬜ Clean gaps | ~14 | Ascent AP, timed launch, Rendezvous AP, Docking AP, Hoverslam, Translatron mode + PANIC, SmartRCS, RCS balancer, Autostage + Autostage-once, Rover drive/stop, auto-deploy toggles, extend/retract all |
 | ⚠️ Needs design | — | Cancellations (`Abort`, `StopLanding`, `Users.Clear`); setpoint field writes (thrust limiters, Translatron speed, rover, ascent/docking settings); menu `Enabled` checkbox |
 | — Not delayed by design | — | Node planning/editing, warp, targeting, info/predictions/settings, on-board automation MechJeb runs after a command |
@@ -205,14 +214,16 @@ fix, without local control, the bridge prefix queued those calls with a full lig
 - The `controller is DisplayModule` idea was rejected. Translatron is a `DisplayModule` in 2.15.4,
   and `SmartASS.Engage` has no controller argument.
 
-### 5.2 Double delay through action groups (🐞)
+### 5.2 Double delay through action groups (✅ fixed)
 
 MechJeb's `KSPAction`s on `MechJebCore` (SmartASS modes, land somewhere / at KSC, PANIC,
 Translatron modes, Ascent AP toggle) can be bound to action groups. RT already delays the action
 group key (`ActionGroupCommand`). When it pops, `ToggleGroup` fires the MechJeb action →
-`Engage()` / `LandUntargeted()` → the bridge queues it **again**. The result is 2× delay.
-**Proposed fix:** set `Bypass` while RT pops an `ActionGroupCommand` (Harmony prefix/finalizer on
-`RemoteTech.FlightComputer.Commands.ActionGroupCommand.Pop`), or detect that RT is the caller.
+`Engage()` / `LandUntargeted()`. The bridge used to queue that **again**, for a 2× delay.
+
+**Fix:** `BridgeAddon` wraps `RemoteTech.FlightComputer.Commands.ActionGroupCommand.Pop` with the
+Bypass prefix/finalizer. RT pops in `Update`, not the physics step, so the §5.1 check alone didn't
+cover it. Anything MechJeb does inside that pop has already been delayed once and runs directly.
 
 ### 5.3 kOS scripts got delayed (✅ fixed by §5.1)
 

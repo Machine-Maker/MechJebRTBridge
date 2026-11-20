@@ -56,6 +56,13 @@ namespace MechJebRTBridge
             Patch(harmony, "MuMech.MechJebModuleSmartASS:OnLoad",
                   prefix: bypassPrefix, finalizer: bypassFinalizer);
 
+            // RemoteTech's delayed action group. MechJeb KSPActions (SmartASS modes, land
+            // somewhere, PANIC, …) bound to an action group fire from inside this Pop, after RT
+            // has already applied the signal delay. Without the bypass the bridge would queue
+            // them a second time (2× delay).
+            Patch(harmony, "RemoteTech.FlightComputer.Commands.ActionGroupCommand:Pop",
+                  prefix: bypassPrefix, finalizer: bypassFinalizer);
+
             Debug.Log("[MJ-RT Bridge] Initialised.");
         }
 
