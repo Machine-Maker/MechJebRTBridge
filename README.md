@@ -5,6 +5,32 @@ A standalone KSP compatibility mod that routes **MechJeb autopilot commands** th
 correct light-speed time to arrive — while the resulting control loop still runs locally
 and instantly on the vessel.
 
+## Why
+
+RemoteTech makes you respect the speed of light. A probe at Duna is minutes away, so every
+command you send it arrives minutes later. MechJeb skips that. Clicking "Execute node" or
+"Land" in MechJeb acts on the vessel instantly, however far away it is, so a MechJeb-equipped
+probe ignores RemoteTech's signal delay entirely.
+
+This bridge closes that gap. MechJeb is treated as a computer *on board* the probe. Your
+clicks are commands that have to cross the link, so they arrive after the real signal delay
+and show up in RemoteTech's flight-computer queue like any other command. Once a command
+arrives, the program it starts (the attitude hold, the burn, the landing) flies the vessel
+locally and in real time, the way an on-board autopilot would.
+
+## Supported commands
+
+| MechJeb feature | Delayed commands | Not delayed |
+|---|---|---|
+| SmartASS | Every attitude button (`Engage`) | Mode tabs (ORBIT/SURFACE/…), since they only switch which buttons are shown |
+| Node Executor | Execute one node, Execute all nodes | Abort (MechJeb calls it internally; it also serves as the instant local cutoff) |
+| Landing Autopilot | Land at target, Land somewhere | Stop landing (MechJeb calls it internally at touchdown) |
+
+Everything else in MechJeb still acts instantly. See the roadmap in
+[`docs/COMMAND_DELAY_PLAN.md`](docs/COMMAND_DELAY_PLAN.md).
+
+## Design
+
 Neither MechJeb2 nor RemoteTech is modified. This is a separate assembly that **hard-
 depends on both** (a compatibility shim is pointless without them):
 
@@ -26,7 +52,7 @@ the vessel — its per-frame `Drive(FlightCtrlState)` loop is never delayed.
 So we delay only the *command boundary* — the public activation / parameter-change call —
 not the control loop. This mirrors how RemoteTech's own `AttitudeCommand` works.
 
-## How it works (proof of concept: SmartASS)
+## How it works (example: SmartASS)
 
 1. A Harmony **prefix** on `MechJebModuleSmartASS.Engage(bool)` intercepts the button press.
 2. If RemoteTech is active and the vessel lacks local control, the bridge snapshots the
@@ -38,50 +64,59 @@ not the control loop. This mirrors how RemoteTech's own `AttitudeCommand` works.
 4. When the delay elapses, RemoteTech reflects back into `SmartAssBridge.RtPop`, which
    re-invokes the real `Engage` locally (guarded so the prefix lets that call through).
 
-Additional command seams — `LandingAutopilot.LandAtPositionTarget/StopLanding`,
-`NodeExecutor.ExecuteAllNodes/Abort`, the Ascent AP toggle, Translatron, etc. — follow the
-exact same pattern and would be added in `BridgeAddon.Start()`.
+The Node Executor and Landing seams follow the same pattern without the highlight handling.
+Further seams (Ascent AP, Rendezvous, Docking, Translatron, …) are added in
+`BridgeAddon.Start()`. Shared plumbing lives in `src/BridgeCore.cs`.
+
+While the vessel has no link, SmartASS also keeps holding the attitude it was last commanded
+to. The bridge registers a RemoteTech sanctioned pilot that re-applies MechJeb's attitude
+output after RemoteTech neutralizes the controls. Throttle isn't re-applied, so engines stay
+cut without a connection.
 
 ## Building
 
 Requires a local KSP install with **MechJeb2, RemoteTech, and Harmony (`000_Harmony`)
-installed in `GameData`** — these provide the reference assemblies. Paths are auto-detected
-in `Directory.Build.props` (mirroring MechJeb2's convention); override in a
-`Directory.Build.props.user` if your layout differs. You also need a .NET / Mono build
-toolchain (`dotnet` or `msbuild`).
+installed in `GameData`**. These provide the reference assemblies, resolved through
+[KSPBuildTools](https://github.com/KSPModdingLibs/KSPBuildTools) `ModReference` items. You also
+need `dotnet` (or Mono's `msbuild`).
+
+Point the build at your install with a gitignored `Directory.Build.props.user`:
+
+```xml
+<Project>
+  <PropertyGroup>
+    <KSPBT_GameRoot>/path/to/Kerbal Space Program</KSPBT_GameRoot>
+    <!-- Only needed if Managed/ isn't where KSPBuildTools expects (e.g. Linux KSP_x64_Data) -->
+    <KSPBT_ManagedPath>/path/to/Kerbal Space Program/KSP_x64_Data/Managed</KSPBT_ManagedPath>
+  </PropertyGroup>
+</Project>
+```
 
 ```
 dotnet build MechJebRTBridge.csproj -c Release
 ```
 
-Override paths with a gitignored `Directory.Build.props.user`:
-
-```xml
-<Project>
-  <PropertyGroup>
-    <KspDir>/path/to/Kerbal Space Program</KspDir>
-    <HarmonyDll>/path/to/0Harmony.dll</HarmonyDll>
-  </PropertyGroup>
-</Project>
-```
+The build writes the DLL to the repo's `GameData/MechJebRTBridge/Plugins/` (for packaging) and,
+when `KSPBT_GameRoot` is set, also copies it into that install's GameData. The version comes
+from the latest git tag (MinVer). Pushing a `v*.*.*` tag runs the release workflow.
 
 ## Install
 
-Copy the built `MechJebRTBridge.dll` to:
+Copy `GameData/MechJebRTBridge/` into your KSP `GameData/`, so that the DLL ends up at
+`GameData/MechJebRTBridge/Plugins/MechJebRTBridge.dll`. Requires MechJeb2, RemoteTech, and
+Harmony (000_Harmony).
 
-```
-GameData/MechJebRTBridge/Plugins/MechJebRTBridge.dll
-```
+## Known limitations
 
-Requires MechJeb2, RemoteTech, and Harmony (000_Harmony) installed.
-
-## Known limitations (POC scope)
-
-- **SmartASS only.** Other MechJeb programs are not yet patched (the framework is in place).
-- **Pending intents live in memory**, keyed by a token in the command node. A quicksave/load
-  during the in-flight delay drops the pending map, so a command mid-delay is skipped rather
-  than resumed. A production version should serialize enough parameters into the command node
-  to reconstruct the action in `RtPop` without the live reference.
+- **Only SmartASS, Node Executor, and Landing are delayed** (see *Supported commands*). Ascent,
+  Rendezvous, Docking, Translatron, staging, and the rest still act instantly.
+- **Cancellations aren't delayed.** Node Executor Abort and Stop Landing act instantly.
+- **Persistence across save/load.** Each command node carries a small payload (`SATarget` +
+  `SAResetPID`, `NEMode`, `LAMode`). If the in-memory pending map is lost on a reload, `RtPop`
+  rebuilds the command against the fresh MechJeb module. Only the *mode* is persisted. The
+  landing target comes from MechJeb's current target when the command arrives, not from when
+  it was sent, and Node Executor works on whatever nodes exist on arrival (it skips with a
+  message if there are none).
 - **Harmony patches MechJeb internals**, whose signatures can change between MechJeb versions.
   With the hard reference this surfaces as a load/JIT failure (logged) rather than a silent
   no-op, and requires a bridge recompile against the new MechJeb.

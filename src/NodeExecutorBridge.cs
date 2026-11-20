@@ -12,7 +12,7 @@ namespace MechJebRTBridge
     /// Patched from <see cref="BridgeAddon"/>:
     ///   - ExecuteOneNodePrefix  → prefix on MechJebModuleNodeExecutor.ExecuteOneNode
     ///   - ExecuteAllNodesPrefix → prefix on MechJebModuleNodeExecutor.ExecuteAllNodes
-    ///   - AbortPrefix           → prefix on MechJebModuleNodeExecutor.Abort
+    /// Abort is deliberately not patched (see below).
     /// </summary>
     public static class NodeExecutorBridge
     {

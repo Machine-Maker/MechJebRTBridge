@@ -110,8 +110,8 @@ Legend — Treatment: **A** continuous (delay activate + setpoints), **B** one-s
 | Program | Module (`MechJebModule*`) | Command entry point(s) — verified | Treatment | UI-hold | Status |
 |---|---|---|---|---|---|
 | Attitude / SmartASS | `SmartASS` + `AttitudeController` | `Engage(bool)` (`:622`); mode row is **C** | A | yes | ✅ |
-| Landing autopilot | `LandingAutopilot` | `LandAtPositionTarget(obj)` (`:114`), `LandUntargeted(obj)` (`:136`), `StopLanding()` (`:150`) | A | target/enable | ⬜ |
-| Node executor | `NodeExecutor` | `ExecuteOneNode(obj)` (`:83`), `ExecuteAllNodes(obj)` (`:90`), `Abort()` (`:106`) | A | enable | ⬜ |
+| Landing autopilot | `LandingAutopilot` | `LandAtPositionTarget(obj)` (`:114`), `LandUntargeted(obj)` (`:136`) delayed; `StopLanding()` (`:150`) left instant (called internally at touchdown) | A | target/enable | ✅ (activation; no UI-hold) |
+| Node executor | `NodeExecutor` | `ExecuteOneNode(obj)` (`:83`), `ExecuteAllNodes(obj)` (`:90`) delayed; `Abort()` (`:106`) left instant (called internally when nodes are consumed) | A | enable | ✅ (activation; no UI-hold) |
 | Ascent autopilot | `AscentBaseAutopilot` (+ `AscentMenu`) | AP toggle (`KSPAction #MechJeb_AscentAPtoggle`); `StartCountdown(double)` (`:92`); enable via `Users`/`Enabled` | A | enable | ⬜ |
 | Rendezvous autopilot | `RendezvousAutopilot` | enable via `Enabled` setter / `Users`; `Users.Clear()` (`:35/:60`) | A | enable | ⬜ |
 | Docking autopilot | `DockingAutopilot` | enable via `Enabled` setter (`OnModuleEnabled` `:~90`); `Users.Clear()` (`:378`) | A | enable | ⬜ |
@@ -170,18 +170,24 @@ A running program's parameter changes are **new delayed commands**, not free loc
 
 ## 8. Cross-cutting concerns / open design decisions
 
-- **Persistence across save/load (⚠️ current gap).** Pending intents live in memory keyed by
-  a token; a quicksave/load mid-delay drops them. Production fix: serialize enough parameters
-  into the command `ConfigNode` so `RtPop` reconstructs the action without the live object.
-  RemoteTech already persists `ExternalAPICommand` nodes and reloads them, so this "just"
-  needs each seam's params to be node-serializable.
+- **Persistence across save/load (✅ basic, mode only).** Each seam stashes its intent in memory
+  by token *and* writes a payload into the command `ConfigNode` (`SATarget`/`SAResetPID`,
+  `NEMode`, `LAMode`). RemoteTech persists `ExternalAPICommand` nodes, so if the in-memory map is
+  gone when `RtPop` fires, the seam rebuilds the command from the payload against a freshly
+  resolved module (`BridgeCore.ResolveModule`). Gap: only the mode is serialized. Rich setpoints
+  (landing target coordinates, the node list) are read live at arrival time. Seams with
+  setpoints (§7) need to serialize them too.
 - **Signal-loss policy (⚠️ not wired).** If the link drops while a program runs, should the
   onboard program keep flying (it's local) or cut out? The "computer on board" model says it
   keeps running — which differs from stock RT neutralizing controls. MechJeb exposes
   `MechJebCore.DeactivateControl` (`MechJebCore.cs:73`) for an emergency local cutoff; decide
   and wire a policy. This is the one place an *instant* (undelayed) action is correct.
-- **Cancellation delay.** Deactivations should take the same light-speed time to arrive
-  (an instant remote abort breaks the fiction) — except the §8 emergency cutoff.
+- **Cancellation delay (⚠️ open).** Deactivations should take the same light-speed time to
+  arrive (an instant remote abort breaks the fiction), except for the emergency cutoff. But
+  `NodeExecutor.Abort()` and `LandingAutopilot.StopLanding()` are also called *internally* by
+  MechJeb (node consumed, touchdown), so a plain prefix would queue those too. They are currently
+  unpatched (instant). Delaying them needs a seam that only catches the UI call (e.g. patch the
+  window's button handler, or check the caller).
 - **Parameter marshalling.** Rich params (Vector3d target coords, quaternions) → prefer
   stashing the live object by token for the in-memory path; serialize to strings only for the
   persistence path.
@@ -196,12 +202,10 @@ A running program's parameter changes are **new delayed commands**, not free loc
 
 ## 9. Suggested rollout order
 
-1. **Landing autopilot** — clean public methods (`LandAtPositionTarget`/`StopLanding`), high
-   player value, great demo of delayed activation + delayed cancellation.
-2. **NodeExecutor** — `ExecuteAllNodes`/`Abort`, also clean.
+1. ~~**Landing autopilot**~~ ✅ activation done (cancellation open, see §8).
+2. ~~**NodeExecutor**~~ ✅ activation done (cancellation open, see §8).
 3. **Ascent autopilot** — the AP toggle; touches staging/throttle too.
-4. **Persistence (§8)** — make commands survive save/load before breadth grows (the failure
-   mode gets more likely the more seams exist).
+4. **Persistence (§8)**: basic mode-only payloads done ✅. Extend to setpoints as seams grow.
 5. **Signal-loss policy (§8)** — wire `DeactivateControl`.
 6. Rendezvous, Docking, Hoverslam, Translatron, Spinup, auto-staging.
 7. One-shot **B** actions (stage, PANIC, deploys).

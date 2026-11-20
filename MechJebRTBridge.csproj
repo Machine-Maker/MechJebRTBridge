@@ -7,6 +7,8 @@
     <LangVersion>8</LangVersion>
     <AppendTargetFrameworkToOutputPath>false</AppendTargetFrameworkToOutputPath>
     <Prefer32Bit>false</Prefer32Bit>
+    <!-- Release tags are v-prefixed (v0.1.0); MinVer ignores them without this. -->
+    <MinVerTagPrefix>v</MinVerTagPrefix>
   </PropertyGroup>
 
   <ItemGroup>
@@ -33,12 +35,13 @@
     </ModReference>
   </ItemGroup>
 
-  <!-- .version file generated on build from MinVer version + static metadata.
+  <!-- .version file generated on build. VERSION is deliberately not set here: KSPBuildTools
+       fills it from $(FileVersion) inside its target, after MinVer has computed it. Setting it
+       from $(MinVer*) properties here would evaluate them before MinVer runs (empty → "..").
        Destination is gitignored; it ends up in GameData/ for packaging. -->
   <ItemGroup>
     <KSPVersionFile Include=".">
       <Destination>$(KSPBT_ModRoot)MechJebRTBridge.version</Destination>
-      <Version>$(MinVerMajor).$(MinVerMinor).$(MinVerPatch)</Version>
       <URL>https://github.com/Machine-Maker/MechJebRTBridge/releases/latest/download/MechJebRTBridge.version</URL>
       <Download>https://github.com/Machine-Maker/MechJebRTBridge/releases/latest</Download>
       <KSP_Version>1.12</KSP_Version>

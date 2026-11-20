@@ -12,7 +12,7 @@ namespace MechJebRTBridge
     /// Patched from <see cref="BridgeAddon"/>:
     ///   - LandAtPositionTargetPrefix → prefix on MechJebModuleLandingAutopilot.LandAtPositionTarget
     ///   - LandUntargetedPrefix       → prefix on MechJebModuleLandingAutopilot.LandUntargeted
-    ///   - StopLandingPrefix          → prefix on MechJebModuleLandingAutopilot.StopLanding
+    /// StopLanding is deliberately not patched (see below).
     /// </summary>
     public static class LandingBridge
     {
