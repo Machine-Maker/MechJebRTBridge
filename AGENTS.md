@@ -18,7 +18,9 @@ delay with RemoteTech's public `RemoteTech.API`.
 Read these before changing anything:
 - `README.md` — user-facing overview, build, install, limitations.
 - `docs/COMMAND_DELAY_PLAN.md` — design principles, the reference pattern for adding a seam,
-  the full MechJeb command inventory with status, open design questions, and gotchas.
+  open design questions, and gotchas.
+- `docs/MECHJEB_COVERAGE.md` — **the coverage matrix**. Every MechJeb feature, the hand action it
+  replaces, whether RemoteTech delays that action, the seam, and its status (✅/⬜/⚠️/🐞).
 
 ## Rule #1: keep the docs in sync with the code
 
@@ -28,17 +30,18 @@ now stands. Before you report a task as done, check this list:
 
 | If you… | Update… |
 |---|---|
-| Add, remove, or change a patched seam (any `Patch(...)` in `BridgeAddon.cs`) | The inventory table in `docs/COMMAND_DELAY_PLAN.md` §5 (status ✅/⬜/⚠️, entry points); the "Supported commands" list in `README.md`; the `Patched from BridgeAddon` header comment of that seam's class |
+| Add, remove, or change a patched seam (any `Patch(...)` in `BridgeAddon.cs`) | The matching rows **and** the §4 summary in `docs/MECHJEB_COVERAGE.md` (status, entry points); the "Supported commands" list in `README.md`; the `Patched from BridgeAddon` header comment of that seam's class |
 | Deliberately leave a method unpatched (e.g. `Abort`, `StopLanding`) | Say why in a comment in `BridgeAddon.cs` **and** in the plan doc. Never list it as patched in a header comment |
 | Change what's persisted in a command `ConfigNode` | The persistence notes in the README "Known limitations" and plan doc §8 |
 | Fix or introduce a limitation | README "Known limitations" |
 | Resolve an open design question (signal-loss policy, cancellation delay, …) | Plan doc §8 (mark it decided, say what was chosen) and §9 rollout order |
 | Learn a non-obvious gotcha (MechJeb/RT internals, reflection quirks, load order) | Plan doc §10 |
 | Change build, dependencies, target framework, CI, or install layout | README "Building"/"Install" and the "Build & test" section below |
+| Update the MechJeb/RT checkouts, or find a new MechJeb feature or caller | `docs/MECHJEB_COVERAGE.md` (source commits at the top, new rows, line refs, §5 bugs, §6 version notes) |
 | Bump supported KSP / MechJeb / RemoteTech versions | `MechJebRTBridge.csproj` `KSPVersionFile` metadata and README |
 
 Also:
-- **Line references** in the plan doc (`:622` etc.) drift. When you touch a seam, re-verify its
+- **Line references** in the docs (`:190` etc.) drift. When you touch a seam, re-verify its
   references against `../MechJeb2` and fix them.
 - If you find docs that are already wrong, even unrelated to your task, fix them or flag them to
   the user. Don't leave them.
@@ -53,7 +56,8 @@ src/BridgeCore.cs           shared plumbing: Bypass guard, RT helpers, module re
 src/SmartAssBridge.cs       seam: SmartASS Engage + UI highlight hold + sanctioned-pilot hold
 src/NodeExecutorBridge.cs   seam: ExecuteOneNode / ExecuteAllNodes
 src/LandingBridge.cs        seam: LandAtPositionTarget / LandUntargeted
-docs/COMMAND_DELAY_PLAN.md  design + inventory + roadmap
+docs/COMMAND_DELAY_PLAN.md  design + patterns + roadmap
+docs/MECHJEB_COVERAGE.md    coverage matrix: every MechJeb feature vs. RT delay, with status
 GameData/MechJebRTBridge/   packaging root (Plugins/ and .version are build outputs, gitignored)
 ```
 

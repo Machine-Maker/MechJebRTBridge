@@ -104,32 +104,9 @@ seam** that the UI field is display-only before reverting it.
 
 ## 5. Master command inventory
 
-Legend — Treatment: **A** continuous (delay activate + setpoints), **B** one-shot discrete,
-**C** local/no-delay. UI-hold: whether §4 applies. Status: ✅ done · ⬜ todo · ⚠️ needs design.
-
-| Program | Module (`MechJebModule*`) | Command entry point(s) — verified | Treatment | UI-hold | Status |
-|---|---|---|---|---|---|
-| Attitude / SmartASS | `SmartASS` + `AttitudeController` | `Engage(bool)` (`:622`); mode row is **C** | A | yes | ✅ |
-| Landing autopilot | `LandingAutopilot` | `LandAtPositionTarget(obj)` (`:114`), `LandUntargeted(obj)` (`:136`) delayed; `StopLanding()` (`:150`) left instant (called internally at touchdown) | A | target/enable | ✅ (activation; no UI-hold) |
-| Node executor | `NodeExecutor` | `ExecuteOneNode(obj)` (`:83`), `ExecuteAllNodes(obj)` (`:90`) delayed; `Abort()` (`:106`) left instant (called internally when nodes are consumed) | A | enable | ✅ (activation; no UI-hold) |
-| Ascent autopilot | `AscentBaseAutopilot` (+ `AscentMenu`) | AP toggle (`KSPAction #MechJeb_AscentAPtoggle`); `StartCountdown(double)` (`:92`); enable via `Users`/`Enabled` | A | enable | ⬜ |
-| Rendezvous autopilot | `RendezvousAutopilot` | enable via `Enabled` setter / `Users`; `Users.Clear()` (`:35/:60`) | A | enable | ⬜ |
-| Docking autopilot | `DockingAutopilot` | enable via `Enabled` setter (`OnModuleEnabled` `:~90`); `Users.Clear()` (`:378`) | A | enable | ⬜ |
-| Hoverslam / suicide burn | `HoverslamAutopilot` | `ToggleEnabled()` (`:17`) → `Enabled` setter | A | enable | ⬜ |
-| Translatron | `Translatron` | `SetMode(TMode)` (`:144`), `PanicSwitch()` (`:163`) | A (B for PANIC) | mode | ⬜ |
-| Spinup | `SpinupController` | `AssertStart()` (`:81`) / `Enabled` | A | enable | ⬜ |
-| Thrust management | `ThrustController` | limiter toggles (`Limit*InfoItem()` `:41+`) + limit value setpoints | A | toggles | ⚠️ |
-| RCS controller/balancer | `RCSController`, `RCSBalancer` | `Enabled` setter | A | enable | ⬜ |
-| Rover autopilot | `RoverController` | `Enabled` / control-mode setters; waypoint/speed setpoints | A | enable | ⚠️ |
-| Auto-staging | `StagingController` | `AutostageOnce(obj)` (`:172`); `Users.Clear()` (`:428`) | A | enable | ⬜ |
-| Immediate stage | `StagingController` | `ImmediateStage()` (`:391`), `Stage()` (`:431`) | **B** | — | ⬜ |
-| PANIC / abort | `Translatron.PanicSwitch`, core `#MechJeb_PANIC` | one-shot | **B** | — | ⬜ |
-| Deploy/retract gear, chutes, panels, antennas | `SolarPanelController`, `DeployableAntennaController`, `DeployableController` | discrete toggles | **B** | — | ⬜ |
-| SmartASS mode row | `SmartASS` | `ModeButton` sets `mode` only (`:135`) — no `Engage` | **C** | — | ✅ (leave instant) |
-| Maneuver planning / node editing | `ManeuverPlanner`, `NodeEditor` | node create/edit | **C** | — | n/a |
-| Predictions / sims / readouts | `LandingPredictions`, `HoverslamSimulation`, `StageStats`, `FlightRecorder*`, `InfoItems`, `CustomInfoWindow` | — | **C** | — | n/a |
-| Time warp | `WarpController`, `WarpHelper` | client/game-time op | **C** | — | n/a |
-| Target selection | `TargetController` | UI selection (arguable) | **C** | — | n/a |
+The full inventory lives in [`MECHJEB_COVERAGE.md`](MECHJEB_COVERAGE.md). For every MechJeb
+feature it lists the hand action it replaces, whether RemoteTech delays that action, the seam,
+and its status. Update that file, not this one, when coverage changes.
 
 > Activation-shape note: many programs don't expose a distinct "Start" method — they enable
 > via the `ComputerModule.Enabled` property setter (which fires `OnModuleEnabled` →
@@ -214,6 +191,13 @@ A running program's parameter changes are **new delayed commands**, not free loc
 ---
 
 ## 10. Reference implementation gotchas (learned from SmartASS)
+
+- **Command methods have internal callers.** `ExecuteOneNode/AllNodes`, `LandUntargeted` and
+  `SmartASS.Engage` are also called by running autopilots (Rendezvous, Ascent, Hoverslam,
+  Translatron PANIC) and by kOS. A bare prefix delays those too. Use the `controller` argument
+  (`is DisplayModule` = player UI) or caller detection. See `MECHJEB_COVERAGE.md` §5.
+- **RT-delayed action groups re-enter the bridge.** MechJeb `KSPAction`s bound to an action group
+  fire from RT's `ActionGroupCommand.Pop`, after RT's delay, and the bridge delays them again.
 
 - The UI sets the state field (`target`) **before** calling the command (`Engage`), so the
   prefix already sees the new value — track the *previous* value out-of-band (per-frame

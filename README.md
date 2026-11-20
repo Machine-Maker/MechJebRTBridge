@@ -26,7 +26,8 @@ locally and in real time, the way an on-board autopilot would.
 | Node Executor | Execute one node, Execute all nodes | Abort (MechJeb calls it internally; it also serves as the instant local cutoff) |
 | Landing Autopilot | Land at target, Land somewhere | Stop landing (MechJeb calls it internally at touchdown) |
 
-Everything else in MechJeb still acts instantly. See the roadmap in
+Everything else in MechJeb still acts instantly. The full per-feature status is in
+[`docs/MECHJEB_COVERAGE.md`](docs/MECHJEB_COVERAGE.md). The design and roadmap are in
 [`docs/COMMAND_DELAY_PLAN.md`](docs/COMMAND_DELAY_PLAN.md).
 
 ## Design
@@ -110,6 +111,10 @@ Harmony (000_Harmony).
 
 - **Only SmartASS, Node Executor, and Landing are delayed** (see *Supported commands*). Ascent,
   Rendezvous, Docking, Translatron, staging, and the rest still act instantly.
+- **Known bug: internal MechJeb calls are delayed too.** When the Rendezvous AP runs its burns,
+  the Ascent AP circularises, Hoverslam engages SmartASS, or Translatron PANIC hands off to
+  landing, those calls also wait a signal delay. MechJeb part actions bound to action groups get
+  delayed twice. See `docs/MECHJEB_COVERAGE.md` §5.
 - **Cancellations aren't delayed.** Node Executor Abort and Stop Landing act instantly.
 - **Persistence across save/load.** Each command node carries a small payload (`SATarget` +
   `SAResetPID`, `NEMode`, `LAMode`). If the in-memory pending map is lost on a reload, `RtPop`

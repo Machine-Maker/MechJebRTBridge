@@ -1,0 +1,236 @@
+# MechJeb ⇄ RemoteTech coverage matrix
+
+This is the master list of **every MechJeb feature that does something to the vessel that a
+player would otherwise do by hand**. It records which of those hand actions RemoteTech delays, and
+whether the bridge delays the MechJeb command that automates them. It is the source of truth for
+coverage. `COMMAND_DELAY_PLAN.md` holds the design and patterns. This file holds the inventory.
+Keep it current (see `AGENTS.md`, Rule #1).
+
+Sources:
+- MechJeb2 `dev` @ `ef540816` (`dev-2.16.0.0-2118`, the new `MechJeb2.UI` KodeWindow UI).
+- MechJeb2 `2.15.4.0` tag (what the Testing instance runs, old IMGUI windows).
+- RemoteTech `develop` @ `003ce96`. The game runs release 1.9.12, which has the same
+  command/delay surface.
+
+Line numbers are against `dev` unless marked *2.15.4*.
+
+---
+
+## 1. The rule this table applies
+
+RemoteTech delays a player's hand action on a vessel without local control. MechJeb lets the
+player skip that action: one click makes MechJeb do it **directly, via the vessel API, bypassing
+RemoteTech's input hooks**, so it lands instantly. The bridge's job is to make the **click** (the
+command to MechJeb) cross the link with the same delay. The automation that follows runs on board,
+in real time.
+
+So for every row, two questions:
+1. **Would RT delay this if done by hand?** If not, the MechJeb equivalent needs no delay either
+   (category C).
+2. **Which MechJeb entry point does the player trigger?** That entry point is the seam to delay,
+   *not* the low-level vessel call MechJeb makes later (that's on-board automation).
+
+Status legend:
+- ✅ delayed by the bridge
+- ⬜ not yet delayed (gap)
+- ⚠️ needs design before it can be delayed
+- 🐞 delayed when it shouldn't be (bug)
+- — not applicable (RT doesn't delay it by hand, so MechJeb shouldn't either)
+
+---
+
+## 2. What RemoteTech delays when done by hand
+
+| Hand action | RT mechanism (src/RemoteTech/…) |
+|---|---|
+| Pitch / yaw / roll / translate / throttle / wheel input | `FlightComputer.OnFlyByWirePre` → `Enqueue(FlightCtrlState)`. Every frame's input is queued with `TimeStamp += Delay` and replayed later (`FlightComputer.cs:456`, `PopFlightCtrl`) |
+| Staging (space bar) | `STAGING` control lock + key → `ActionGroupCommand(Stage)` → `StageManager.ActivateNextStage()` on pop (`RTCore.cs:291`, `ActionGroupCommand.cs:18`) |
+| SAS / RCS toggle, SAS hold | `SAS`/`RCS` locks + key → `ActionGroupCommand(SAS/RCS)` (`RTCore.cs:292-293, 306-317`) |
+| Gear, brakes, lights, abort, custom AG 1–10 | `GROUPS_ALL` lock + key → `ActionGroupCommand`. The on-screen gear/brakes/light/abort buttons are rewired too (`UI/FlightUIPatcher.cs`) |
+| Axis groups (KSP 1.4+) | `AxisGroupCommand` (`RTCore.cs:182`) |
+| Stock SAS mode buttons (prograde, …) | Navball autopilot buttons rewired → `StockAutopilotCommand` (`FlightComputer.cs:242`) |
+| Part right-click events / fields (extend panel, deploy chute, toggle engine, set limiter, …) | PAW wrapped → `EventCommand` / `PartActionCommand` (`UIPartActionMenuPatcher.cs`, `ModuleSPU.cs:353, 405`) |
+| RT flight-computer programs (attitude, burn, maneuver exec, rover drive, PID, hibernate) | Queued directly by the RT UI fragments |
+| **Not delayed by RT:** time warp, maneuver node create/edit, target selection*, map/camera/UI | — |
+
+\* RT queues a `TargetCommand` when the target changes, but it only feeds RT's *own* flight
+computer (`f.DelayedTarget`). It doesn't stop KSP's target from changing instantly.
+
+A delayed action group ends up calling `Vessel.ActionGroups.ToggleGroup`, which fires **every**
+`KSPAction` bound to that group, including MechJeb's own actions (§5).
+
+---
+
+## 3. Matrix: hand action ↔ MechJeb automation ↔ command seam
+
+### 3.1 Attitude / steering
+
+| MechJeb feature | Replaces by hand | Player command (seam) | Status |
+|---|---|---|---|
+| SmartASS (all modes, incl. EXECUTE / advanced / surface angles) | Steering / stock SAS modes | `MechJebModuleSmartASS.Engage(bool)` (`:190`) | ✅ |
+| SmartASS via part action / action group (`Orbit Prograde`, … `Deactivate SmartACS`) | Steering | `MechJebCore.On*Action` → `EngageSmartASSOrbitalControl` → `Engage` (`MechJebCore.cs:110-132`) | 🐞 double delay (§5.2) |
+| Attitude hold during signal loss | (RT neutralises controls) | Bridge sanctioned pilot (`SmartAssBridge.CaptureAttitudePostfix`) | ✅ attitude only |
+| Attitude Adjustment (PID / tuning) | — (settings) | field edits | — |
+| Spinup controller | Roll input | Started only by the PSG autopilot (`AssertStart` `:81`), never directly by the player | — (internal) |
+
+### 3.2 Throttle / engines
+
+| MechJeb feature | Replaces by hand | Player command (seam) | Status |
+|---|---|---|---|
+| Translatron mode (OFF / KEEP ORB / KEEP SURF / KEEP VERT / …) | Throttle | `MechJebModuleTranslatron.SetMode(TMode)` (`:38`); part actions `MechJebCore.cs:203-215` | ⬜ |
+| Translatron speed setpoint (+1/−1/0, field) | Throttle | `SetTranslatronSpeed` part actions; `trans_spd` field edit (`Translatron.cs:33`) | ⚠️ setpoint (field write) |
+| Translatron PANIC | Throttle cut, staging, decouple | `PanicSwitch()` (`:57`); `#MechJeb_PANIC` part action | ⬜ (should be **B**, one-shot) |
+| Thrust limiters (Q, overheat, flameout, unstable ignition, accel, throttle, min, electric, differential) | Throttle / PAW thrust limiter | bool fields + `EditableDouble` setpoints on `MechJebModuleThrustController` (`:38-139`) | ⚠️ setpoint (field write) |
+| Differential throttle | PAW thrust limiter per engine | `DifferentialThrottle` toggle (`:105`) | ⚠️ |
+
+### 3.3 Staging
+
+| MechJeb feature | Replaces by hand | Player command (seam) | Status |
+|---|---|---|---|
+| Autostage (continuous) | Staging | `Core.Staging.Users.Add(window)` from Utilities / Thrust window toggle (`UI/UtilitiesView.cs:64`, `InfoItems/ThrustItemBuilders.cs:84`) | ⬜ |
+| Autostage once | Staging | `MechJebModuleStagingController.AutostageOnce(object)` (`:232`) / `CancelAutostageOnce()` (`:246`) | ⬜ |
+| Autostage limits / rules | — (settings) | field edits | — (arguably ⚠️: changes on-board behaviour) |
+| Launch at T-0 (timed launch stages the vessel) | Staging | `LaunchCountdown.StartToPlaneOfTarget/StartToTargetLan/StartToLan` (`:41/:60/:69`), abort `AbortTimedLaunch` (`AscentMenu.cs:164`) | ⬜ |
+
+### 3.4 Maneuver execution
+
+| MechJeb feature | Replaces by hand | Player command (seam) | Status |
+|---|---|---|---|
+| Execute next node / all nodes (Maneuver Planner, Node Editor, Rendezvous Planner, toolbar menu) | Steering + throttle for the burn | `MechJebModuleNodeExecutor.ExecuteOneNode(obj)` (`:133`), `ExecuteAllNodes(obj)` (`:141`) | ✅ for UI callers; 🐞 for internal callers (§5.1) |
+| Abort node execution | Throttle cut | `NodeExecutor.Abort()` (`:174`) | ⚠️ unpatched by design (MechJeb calls it internally) |
+| Create / edit / delete maneuver nodes (Planner, Node Editor, aerobrake nodes) | Node editing | `PlaceManeuverNode`, `RemoveSelf` | — (RT doesn't delay node editing) |
+| Node executor auto-warp | Time warp | `NodeUi.AutowarpToggle` | — |
+
+### 3.5 Ascent
+
+| MechJeb feature | Replaces by hand | Player command (seam) | Status |
+|---|---|---|---|
+| Ascent AP engage (classic + PSG) | Staging, steering, throttle | `MechJebModuleAscentMenu.Engage()` (`:88`) → `_autopilot.Users.Add`; part action `OnAscentAPToggleAction` (`MechJebCore.cs:86`) | ⬜ |
+| Ascent AP disengage | — | `menu._autopilot.Users.Clear()` (`UI/AscentView.cs:145`) | ⬜ (cancellation) |
+| Ascent settings (target alt, inclination, pitch program, PSG stages, autostage, auto-deploy, …) | — | field edits | ⚠️ setpoint. Only matters while engaged |
+| Ascent circularisation burn | — | Internal: `Core.Node.ExecuteOneNode(this)` (`AscentClassicAutopilot.cs:362`; *2.15.4* `AscentBaseAutopilot.cs:281`) | 🐞 (§5.1) |
+
+### 3.6 Landing / hover
+
+| MechJeb feature | Replaces by hand | Player command (seam) | Status |
+|---|---|---|---|
+| Land at target / land somewhere | Steering, throttle, staging, chutes, gear | `MechJebModuleLandingAutopilot.LandAtPositionTarget(obj)` (`:181`), `LandUntargeted(obj)` (`:214`); part actions `Land somewhere` / `Land at KSC` (`MechJebCore.cs:134-138`) | ✅ UI; 🐞 part actions (§5.2) and Translatron PANIC (§5.1) |
+| Abort autoland | Throttle cut | `StopLanding()` (`:233`) | ⚠️ unpatched by design (called at touchdown) |
+| Landing target pick / coordinates / site | — | `Core.Target.*` | — |
+| Landing autopilot deploys chutes / stages / extends gear | PAW deploy, staging, gear AG | Internal (`LandingAutopilot.cs:477, 496`) | — (on-board automation) |
+| Hoverslam / suicide burn | Steering, throttle | `MechJebModuleHoverslamAutopilot.ToggleEnabled()` (`:17`, via info-item action `HoverslamAutopilot.ToggleEnabled`) | ⬜ |
+| Hoverslam engaging SmartASS | — | Internal `Core.SmartASS.Engage()` (`Hoverslam:233`) | 🐞 (§5.1) |
+
+### 3.7 Rendezvous / docking
+
+| MechJeb feature | Replaces by hand | Player command (seam) | Status |
+|---|---|---|---|
+| Rendezvous AP engage / disengage | Burns, steering | `Autopilot.Users.Add(window)` / `Users.Clear()` (`UI/RendezvousAutopilotView.cs:47/55`) | ⬜ |
+| Rendezvous AP running node burns | — | Internal `Core.Node.ExecuteAllNodes(this)` (`RendezvousAutopilot.cs:237`) | 🐞 (§5.1) |
+| Rendezvous Planner node execution | Steering + throttle | via `NodeUi.ExecuteButtons` → `ExecuteOneNode/AllNodes(guidance)` | ✅ |
+| Docking AP engage / disengage | RCS translate, steering, SAS/RCS AG | `Ap.Users.Add(guidance)` / `Users.Clear()` (`UI/DockingGuidanceView.cs:173/175`) | ⬜ |
+| Docking speed limits, target port | — | field edits / target | ⚠️ setpoint / — |
+
+### 3.8 RCS
+
+| MechJeb feature | Replaces by hand | Player command (seam) | Status |
+|---|---|---|---|
+| SmartRCS (ZERO RVEL, …) | RCS translation | `MechJebModuleSmartRcs.Engage()` (`:75`) | ⬜ |
+| RCS balancer enable | RCS translation / PAW thrust limits | `MechJebModuleRCSBalancer` `Enabled` (menu checkbox `UI/MenuView.cs:221`) | ⬜ |
+| MechJeb toggling the RCS/SAS action groups while flying | RCS/SAS AG | Internal `ActionGroups.SetGroup` (AttitudeController, NodeExecutor, Docking, …) | — (on-board automation) |
+
+### 3.9 Rover
+
+| MechJeb feature | Replaces by hand | Player command (seam) | Status |
+|---|---|---|---|
+| Rover drive / stop / to target | Wheel steer + throttle, brakes AG | `MechJebModuleRoverWindow.Drive(bool)` (`:56`) / `Stop()` (`:64`); also releases brakes directly (`:42`) | ⬜ |
+| Heading / speed hold toggles + setpoints | Wheel input | `RoverController.ControlHeading/ControlSpeed` + fields | ⚠️ setpoint |
+| Waypoints (add / reverse / loop) | — | `MechJebModuleWaypointWindow` | ⚠️ setpoint while driving |
+| Rover controller retracting panels / braking | PAW, brakes AG | Internal (`RoverController.cs:476, 518`) | — (on-board automation) |
+
+### 3.10 Deployables
+
+| MechJeb feature | Replaces by hand | Player command (seam) | Status |
+|---|---|---|---|
+| Auto-deploy solar panels toggle | PAW extend/retract | `MechJebModuleDeployableController.AutoDeploy` field / `ToggleDeploy()` (`:217`) | ⬜ |
+| Auto-deploy antennas toggle | PAW extend/retract | `MechJebModuleDeployableAntennaController` same API | ⬜ (careful: an antenna retract can cut the link it arrived on) |
+| Extend / retract all now | PAW extend/retract | `ExtendAll()` (`:51`) / `RetractAll()` (`:91`) | ⬜ (one-shot **B**) |
+
+### 3.11 Other
+
+| MechJeb feature | Replaces by hand | Player command (seam) | Status |
+|---|---|---|---|
+| Warp helper / MechJeb warp / pause / resume | Time warp | `WarpHelper.StartWarp/AbortWarp`, `WarpController.*` | — |
+| Target controller (pick / clear) | Target selection | `Core.Target.*`, `SetVesselTarget` (`TargetController.cs:53`) | — |
+| Info windows, predictions, stage stats, flight recorder, settings | — | — | — |
+| Module enable checkboxes (menu) | depends | `m.Enabled = v` (`UI/MenuView.cs:221`) | ⚠️ the window toggles are UI, but the same checkbox list enables RCSBalancer etc. Needs filtering by module type |
+
+---
+
+## 4. Summary
+
+| Bucket | Count | Items |
+|---|---|---|
+| ✅ Delayed | 3 seams | SmartASS `Engage`; NodeExecutor `ExecuteOneNode/AllNodes`; Landing `LandAtPositionTarget/LandUntargeted` |
+| 🐞 Wrongly delayed | 5 paths | Ascent circularise, Rendezvous AP burns, Hoverslam→SmartASS, Translatron PANIC→SmartASS/Landing, MechJeb part actions via delayed action groups. Also kOS (§5.3) |
+| ⬜ Clean gaps | ~14 | Ascent AP, timed launch, Rendezvous AP, Docking AP, Hoverslam, Translatron mode + PANIC, SmartRCS, RCS balancer, Autostage + Autostage-once, Rover drive/stop, auto-deploy toggles, extend/retract all |
+| ⚠️ Needs design | — | Cancellations (`Abort`, `StopLanding`, `Users.Clear`); setpoint field writes (thrust limiters, Translatron speed, rover, ascent/docking settings); menu `Enabled` checkbox |
+| — Not delayed by design | — | Node planning/editing, warp, targeting, info/predictions/settings, on-board automation MechJeb runs after a command |
+
+---
+
+## 5. Bugs found in the current seams
+
+### 5.1 Internal callers get delayed (🐞, affects 2.15.4 and dev)
+
+The patched methods are also called by **MechJeb programs that are already running on board**.
+Without local control, the bridge prefix queues those calls with a full light-speed delay:
+
+| Caller | Call | Effect |
+|---|---|---|
+| Rendezvous AP | `Core.Node.ExecuteAllNodes(this)` (`RendezvousAutopilot.cs:237`, *2.15.4* `:54`) | every rendezvous burn starts one signal delay late |
+| Ascent AP | `Core.Node.ExecuteOneNode(this)` (`AscentClassicAutopilot.cs:362`, *2.15.4* `AscentBaseAutopilot.cs:281`) | circularisation burn starts one delay late, possibly after apoapsis |
+| Hoverslam AP | `Core.SmartASS.Engage()` (`Hoverslam:233`) | attitude hold engages late |
+| Translatron PANIC | `Core.SmartASS.Engage()` (`Translatron.cs:106`), `LandUntargeted(this)` (`:215`, *2.15.4* `:273`) | the abort's attitude release and landing hand-off arrive late |
+
+**Proposed fix:** `ExecuteOneNode`, `ExecuteAllNodes`, `LandAtPositionTarget` and `LandUntargeted`
+take an `object controller`. UI windows pass a `DisplayModule` (ManeuverPlanner, NodeEditor,
+RendezvousGuidance, LandingGuidance). Autopilots pass themselves (plain `ComputerModule`). kOS
+passes a binding object. So delay only when `controller is DisplayModule`. `SmartASS.Engage` has
+no controller arg, so patch the internal callers instead (a prefix/postfix setting
+`BridgeCore.Bypass` around `Hoverslam` / `Translatron.StopOtherAutopilots`), or check the call
+stack. Verify the controller types on 2.15.4 too before relying on them.
+
+### 5.2 Double delay through action groups (🐞)
+
+MechJeb's `KSPAction`s on `MechJebCore` (SmartASS modes, land somewhere / at KSC, PANIC,
+Translatron modes, Ascent AP toggle) can be bound to action groups. RT already delays the action
+group key (`ActionGroupCommand`). When it pops, `ToggleGroup` fires the MechJeb action →
+`Engage()` / `LandUntargeted()` → the bridge queues it **again**. The result is 2× delay.
+**Proposed fix:** set `Bypass` while RT pops an `ActionGroupCommand` (Harmony prefix/finalizer on
+`RemoteTech.FlightComputer.Commands.ActionGroupCommand.Pop`), or detect that RT is the caller.
+
+### 5.3 kOS scripts get delayed (🐞, if kOS + MechJebKos installed)
+
+`MechJebKos` calls `Engage`, `ExecuteOneNode/AllNodes`, `Users.Add/Clear` directly. A kOS
+script runs on the vessel's own CPU, so its MechJeb calls are on-board and shouldn't be delayed
+(RT/kOS integration delays the *typed* commands already). The `controller is DisplayModule`
+filter in §5.1 fixes the node/landing calls. `SmartASS.Engage` from kOS needs the same caller
+detection.
+
+---
+
+## 6. MechJeb version notes
+
+- **MechJeb `dev` replaced the UI.** The IMGUI `*Window.cs` / `*Menu.cs` drawing moved into a
+  separate assembly, `MechJeb2.UI` (KodeWindow), which calls into the same core module methods.
+  All 7 current patch targets exist with unchanged signatures on `dev` (checked 2026-11-19). Patch
+  **core module methods**, not UI code, so one seam covers both UIs, toolbar actions, and part
+  actions.
+- Most autopilots have no "Start" method. The UI calls `module.Users.Add(window)` /
+  `Users.Clear()`. A single generic seam on `UserPool.Add` / `UserPool.Clear`
+  (`ComputerModule.cs:357/373`), filtered by `_controlledModule` type **and** by
+  `user is DisplayModule`, could cover Ascent, Rendezvous, Docking, Autostage, and RCS in one
+  place.
+- The Testing instance runs **2.15.4**. Anything patched must be checked against both until the
+  bridge drops 2.15.x support.
