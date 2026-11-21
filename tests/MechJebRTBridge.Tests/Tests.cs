@@ -34,6 +34,7 @@ namespace MechJebRTBridge.Tests
             new TestCase("Every patch target is patched",          PatchesApplied),
             new TestCase("SmartASS: click is delayed",              SmartAssClickDelayed),
             new TestCase("SmartASS: on-board call is instant",      SmartAssInternalInstant),
+            new TestCase("SmartASS: highlight tracks with the window closed", SmartAssTracksWindowClosed),
             new TestCase("No connection: click is refused",         NoConnectionRefused),
             new TestCase("Node Executor: click is delayed",         NodeClickDelayed),
             new TestCase("Node Executor: on-board call is instant", NodeInternalInstant),
@@ -63,7 +64,7 @@ namespace MechJebRTBridge.Tests
         private static readonly (string target, bool optional)[] PatchTargets =
         {
             ("MuMech.MechJebModuleSmartASS:Engage", false),
-            ("MuMech.ComputerModule:OnFixedUpdate", false),
+            ("MuMech.MechJebCore:FixedUpdate", false),
             ("MuMech.MechJebModuleAttitudeController:Drive", false),
             ("MuMech.MechJebModuleNodeExecutor:ExecuteOneNode", false),
             ("MuMech.MechJebModuleNodeExecutor:ExecuteAllNodes", false),
@@ -155,6 +156,31 @@ namespace MechJebRTBridge.Tests
             c.CheckLog("SCHED", mark, 0, "on-board call");
             c.CheckLogAtLeast("SmartASS Engage: internal call (physics step)", mark, 1, "on-board call");
             Check(c.QueuedCount == 0, "on-board call put a command in the RT queue");
+        }
+
+        // The bridge tracks the mode SmartASS holds every physics step, so a click can revert the
+        // highlight to it. MechJeb only runs a module's own OnFixedUpdate while the module is
+        // Enabled (for SmartASS: its window is open), so tracking must not depend on that.
+        private static IEnumerator SmartAssTracksWindowClosed(Ctx c)
+        {
+            var sass = c.Module<MechJebModuleSmartASS>();
+            bool wasOpen = sass.Enabled;
+            sass.Enabled = false; // close the SmartASS window
+            try
+            {
+                yield return Physics(() => { sass.target = Target.RETROGRADE; sass.Engage(); });
+                yield return PhysicsTicks(3);
+
+                int mark = c.Mark();
+                sass.target = Target.PROGRADE; // e.g. a part action, with the window closed
+                sass.Engage();
+                c.CheckLog("SCHED PROGRADE ", mark, 1, "click");
+                Check(sass.target == Target.RETROGRADE,
+                      $"after the click SmartASS shows {sass.target}; expected the mode it holds (RETROGRADE)");
+                yield return WaitUntil(() => c.Count("EXEC PROGRADE ", mark) > 0, "SmartASS EXEC");
+                Check(sass.target == Target.PROGRADE, $"after EXEC SmartASS is {sass.target}, expected PROGRADE");
+            }
+            finally { sass.Enabled = wasOpen; }
         }
 
         // ---- no connection -----------------------------------------------------

@@ -48,7 +48,8 @@ namespace MechJebRTBridge.Tests
     /// frame and <see cref="FixedUpdate"/> once per physics step.
     ///
     /// Yield values: <c>null</c> (next frame), an <see cref="IEnumerator"/> (run it to the end,
-    /// then continue), a <see cref="PhysicsStep"/>, or a <see cref="Guarded"/>.
+    /// then continue), a <see cref="PhysicsStep"/>, or a <see cref="Guarded"/>. When an exception
+    /// unwinds a frame, the frame is disposed, so <c>try/finally</c> in a test still restores state.
     /// </summary>
     internal sealed class Driver
     {
@@ -72,8 +73,15 @@ namespace MechJebRTBridge.Tests
 
         internal void Stop()
         {
-            _stack.Clear();
+            while (_stack.Count > 0) Dispose(_stack.Pop());
             _waiting = null;
+        }
+
+        // Runs the iterator's pending finally blocks (a test restoring state it changed).
+        private static void Dispose(Frame f)
+        {
+            try { (f.It as IDisposable)?.Dispose(); }
+            catch (Exception e) { UnityEngine.Debug.LogError("[MJ-RT Test] error while unwinding a test: " + e); }
         }
 
         internal void FixedUpdate()
@@ -127,6 +135,7 @@ namespace MechJebRTBridge.Tests
             while (_stack.Count > 0)
             {
                 Frame f = _stack.Pop();
+                Dispose(f);
                 if (f.Guard != null)
                 {
                     f.Guard.Error = e;

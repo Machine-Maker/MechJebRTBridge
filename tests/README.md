@@ -51,10 +51,10 @@ In flight, click the green square on the toolbar, then **Run all**, or **▶** t
 Results show in the window and go to `KSP.log`:
 
 ```
-[MJ-RT Test] RUN 21 test(s)
+[MJ-RT Test] RUN 22 test(s)
 [MJ-RT Test] PASS SmartASS: click is delayed
 [MJ-RT Test] SKIP Docking AP: closing the window is instant — close MechJeb's Docking Autopilot window first
-[MJ-RT Test] SUMMARY 20 passed, 0 failed, 1 skipped
+[MJ-RT Test] SUMMARY 21 passed, 0 failed, 1 skipped
 ```
 
 `grep "MJ-RT" KSP.log` shows the test results alongside the bridge's own lines.
@@ -79,6 +79,7 @@ During a run the harness:
 | Every patch target is patched | Each method `BridgeAddon` patches is patched by `com.mechjebrtbridge`. Version-specific stop paths that don't exist in the loaded MechJeb are listed, not failed. |
 | SmartASS: click is delayed | One SCHED, one RT queue entry. The button shows the old mode until arrival. It arrives after ≈3 s and engages. |
 | SmartASS: on-board call is instant | `Engage` from the physics step applies at once, logs `internal call`, and queues nothing. |
+| SmartASS: highlight tracks with the window closed | With the SmartASS window closed, an on-board mode change is still tracked, so a click (e.g. a part action) reverts the highlight to the mode SmartASS holds (`docs/MECHJEB_COVERAGE.md` §5.5). The window is reopened afterwards if it was open. |
 | No connection: click is refused | Under blackout, a SmartASS click is refused and nothing is queued. 30 frames of Rendezvous engage give one refusal message (2.15.x throttle). |
 | Node Executor: click / on-board call | Execute one node is delayed. Execute all nodes from the physics step starts at once. |
 | Landing: click is delayed | Land somewhere is delayed ≈3 s, then the autopilot is running. |

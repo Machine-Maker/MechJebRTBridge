@@ -16,7 +16,7 @@ namespace MechJebRTBridge
     ///
     /// Patched from <see cref="BridgeAddon"/>:
     ///   - EngagePrefix  → prefix  on MechJebModuleSmartASS.Engage
-    ///   - TrackPostfix  → postfix on ComputerModule.OnFixedUpdate (filters to SmartASS)
+    ///   - TrackPostfix  → postfix on MechJebCore.FixedUpdate
     ///   - CaptureAttitudePostfix → postfix on MechJebModuleAttitudeController.Drive
     /// </summary>
     public static class SmartAssBridge
@@ -49,11 +49,14 @@ namespace MechJebRTBridge
         internal static bool EngagePrefix(MechJebModuleSmartASS __instance, bool resetPID)
             => OnEngage(__instance, resetPID);
 
-        // Tracks the actual committed mode each frame, but only while no command is in flight
-        // (so the highlight stays frozen on the old mode while a command is travelling).
-        internal static void TrackPostfix(object __instance)
+        // Tracks the actual committed mode every physics step, but only while no command is in
+        // flight (so the highlight stays frozen on the old mode while a command is travelling).
+        // Hooked on the core, not on the module's OnFixedUpdate: MechJeb runs a module's
+        // OnFixedUpdate only while it's Enabled, and SmartASS is a window (Enabled = window open).
+        internal static void TrackPostfix(MechJebCore __instance)
         {
-            if (__instance is MechJebModuleSmartASS sass && !_inFlight.Has(sass))
+            MechJebModuleSmartASS sass = __instance.GetComputerModule<MechJebModuleSmartASS>();
+            if (sass != null && !_inFlight.Has(sass))
                 _committed[sass] = sass.target;
         }
 

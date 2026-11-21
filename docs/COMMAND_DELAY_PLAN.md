@@ -88,8 +88,9 @@ the vessel. Delaying these would just make the UI feel broken.
 For continuous programs whose UI shows a selected state, the delayed command must not flip
 the UI immediately. Reference implementation (SmartASS):
 
-- Track the **actual** state every frame via a postfix on the module's `OnFixedUpdate`,
-  recording it only while no command is in flight (`_committed`).
+- Track the **actual** state every physics step via a postfix on `MechJebCore.FixedUpdate`,
+  recording it only while no command is in flight (`_committed`). Not on the module's own
+  `OnFixedUpdate`: that one only runs while the module is Enabled (§10).
 - On interception: revert the UI field to the actual state, and post a screen message
   `"<action> queued · signal delay X.Xs"` (`ScreenMessages.PostScreenMessage`).
 - On `RtPop`: set the UI field to the requested state, update `_committed`, run the command
@@ -224,8 +225,13 @@ A running program's parameter changes are **new delayed commands**, not free loc
   `Token`). See `MECHJEB_COVERAGE.md` §5.4.
 
 - The UI sets the state field (`target`) **before** calling the command (`Engage`), so the
-  prefix already sees the new value — track the *previous* value out-of-band (per-frame
-  `OnFixedUpdate` postfix) to keep the highlight truthful (§4).
+  prefix already sees the new value — track the *previous* value out-of-band (per-physics-step
+  `MechJebCore.FixedUpdate` postfix) to keep the highlight truthful (§4).
+- **MechJeb only runs `OnFixedUpdate` / `OnUpdate` / `Drive` on Enabled modules**
+  (`MechJebCore.cs:576/668/1068` on 2.15.4). A window module (`DisplayModule`, SmartASS
+  included) is Enabled only while its window is open. A per-frame hook on a module's own
+  callbacks therefore stops when its window closes. Hook `MechJebCore.FixedUpdate` instead. See
+  `MECHJEB_COVERAGE.md` §5.5.
 - `RtPop` must be `public static bool RtPop(ConfigNode)`; RemoteTech invokes it by reflection
   via `Type.GetType(AssemblyQualifiedName)` — keep the type public.
 - RemoteTech wraps the queued node under an `ExternalData`/`MJRT` subnode before handing it

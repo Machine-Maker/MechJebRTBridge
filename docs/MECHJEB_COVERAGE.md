@@ -257,6 +257,20 @@ If RT's internals can't be read, `IsQueued` errs towards "still queued", which i
 behaviour. Tested by the harness's two "RT cancel" tests. Node Executor / Landing still leak a
 `_pending` entry per dropped command, which is harmless.
 
+### 5.5 SmartASS highlight tracking stopped while its window was closed (✅ fixed)
+
+`TrackPostfix` was a postfix on `ComputerModule.OnFixedUpdate`. MechJeb calls a module's
+`OnFixedUpdate` only `if (module.Enabled)` (*2.15.4* `MechJebCore.cs:576`). SmartASS is a
+`DisplayModule`, so it's Enabled only while its window is open. With the window closed:
+- `_committed` went stale, so a SmartASS click arriving from outside the window (part action,
+  action group key, a refused or queued click) reverted `target` to an old mode.
+- A cancelled SmartASS command wasn't noticed until the window opened (§5.4).
+
+**Fix:** `TrackPostfix` is a postfix on `MechJebCore.FixedUpdate` (*2.15.4* `:523`, dev `:527`).
+That runs every physics step whatever the window state, and looks up the core's SmartASS.
+Found by the harness, on a probe with the SmartASS window closed. The harness test "SmartASS:
+highlight tracks with the window closed" covers it.
+
 ---
 
 ## 6. MechJeb version notes

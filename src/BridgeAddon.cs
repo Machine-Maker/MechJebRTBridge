@@ -22,7 +22,7 @@ namespace MechJebRTBridge
             // sanctioned-pilot hold during signal blackout.
             Patch(harmony, "MuMech.MechJebModuleSmartASS:Engage",
                   prefix:  H(typeof(SmartAssBridge),  nameof(SmartAssBridge.EngagePrefix)));
-            Patch(harmony, "MuMech.ComputerModule:OnFixedUpdate",
+            Patch(harmony, "MuMech.MechJebCore:FixedUpdate",
                   postfix: H(typeof(SmartAssBridge),  nameof(SmartAssBridge.TrackPostfix)));
             Patch(harmony, "MuMech.MechJebModuleAttitudeController:Drive",
                   postfix: H(typeof(SmartAssBridge),  nameof(SmartAssBridge.CaptureAttitudePostfix)));
