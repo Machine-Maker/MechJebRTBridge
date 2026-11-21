@@ -51,10 +51,10 @@ In flight, click the green square on the toolbar, then **Run all**, or **▶** t
 Results show in the window and go to `KSP.log`:
 
 ```
-[MJ-RT Test] RUN 17 test(s)
+[MJ-RT Test] RUN 21 test(s)
 [MJ-RT Test] PASS SmartASS: click is delayed
 [MJ-RT Test] SKIP Docking AP: closing the window is instant — close MechJeb's Docking Autopilot window first
-[MJ-RT Test] SUMMARY 16 passed, 0 failed, 1 skipped
+[MJ-RT Test] SUMMARY 20 passed, 0 failed, 1 skipped
 ```
 
 `grep "MJ-RT" KSP.log` shows the test results alongside the bridge's own lines.
@@ -63,8 +63,9 @@ During a run the harness:
 - **adds a 3 s manual delay** to the RemoteTech flight computer (the "Delay (+ signal)" field
   in RT's queue window). LKO's real delay is milliseconds, too short to tell a delayed command
   from an instant one. The original value is restored at the end, or if you leave the scene.
-- **stubs out the per-frame work** (`Drive`, `OnFixedUpdate`, `OnUpdate`) of the Node Executor
-  and the Landing, Rendezvous and Docking autopilots. An engaged autopilot then stays engaged
+- **stubs out the per-frame work** (`Drive`, `OnFixedUpdate`, `OnUpdate`) of the Node Executor,
+  the Landing, Rendezvous, Docking and Ascent autopilots, and the staging and thrust controllers
+  (so autostage can't fire a stage). An engaged autopilot then stays engaged
   without a target, and never burns, warps or disengages itself. Engage/disengage code runs for
   real.
 - **turns on RemoteTech radio blackout** for the no-connection test, and lifts it afterwards.
@@ -85,6 +86,8 @@ During a run the harness:
 | Rendezvous AP: on-board stop / non-window user | A physics-step `Clear` and an `Add` from another module act at once. |
 | Docking AP: engage + disengage | Same as Rendezvous, for the Docking AP. |
 | Docking AP: EndDocking / closing the window | The Bypass-wrapped stop paths act at once, from outside the physics step. |
+| Ascent AP: engage / disengage | Engage via `Users.Add(menu)`, disengage via `Remove` (2.15.x) and `Clear` (dev): each is delayed ≈3 s. The Ascent window may be open. |
+| Ascent AP: on-board stop / toggle action | A physics-step `Clear` acts at once. The "Ascent AP toggle" part action, clicked outside the physics step, is delayed both ways. |
 | RT cancel: Rendezvous / SmartASS | After a queued command is cancelled with RT's "x" (a `CancelCommand`), the Rendezvous engage button works again, and SmartASS goes back to tracking the mode it holds (`docs/MECHJEB_COVERAGE.md` §5.4). |
 
 ## Not covered (still manual)

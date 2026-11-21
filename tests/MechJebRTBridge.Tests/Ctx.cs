@@ -171,11 +171,11 @@ namespace MechJebRTBridge.Tests
         /// <c>this</c>. Prefers the named window; skips the test if that window is open, because
         /// its own OnGUI would fight the test over the autopilot's state.
         /// </summary>
-        internal DisplayModule Window(string typeName, string title)
+        internal DisplayModule Window(string typeName, string title, bool allowOpen = false)
         {
             if (Core.GetComputerModule(typeName) is DisplayModule w)
             {
-                if (w.Enabled) Skip($"close MechJeb's {title} window first");
+                if (w.Enabled && !allowOpen) Skip($"close MechJeb's {title} window first");
                 return w;
             }
             DisplayModule any = Core.GetComputerModules<DisplayModule>().OfType<DisplayModule>()
@@ -183,6 +183,17 @@ namespace MechJebRTBridge.Tests
             Check(any != null, "no closed MechJeb window to act as the click's user");
             Note = $"{typeName} not in this MechJeb; using {any.GetType().Name} as the window";
             return any;
+        }
+
+        /// <summary>
+        /// The selected ascent autopilot (Classic / PVG / PSG). <c>Core.Ascent</c> is a class on
+        /// MechJeb 2.15.x and an interface on dev, so it's read by reflection.
+        /// </summary>
+        internal ComputerModule Ascent()
+        {
+            var m = Traverse.Create(Core).Property("Ascent").GetValue() as ComputerModule;
+            Check(m != null, "no ascent autopilot on the vessel's MechJeb");
+            return m;
         }
 
         internal IEnumerator AddNode()
@@ -279,6 +290,7 @@ namespace MechJebRTBridge.Tests
                 if (Core.Landing.Enabled) Core.Landing.StopLanding();
                 Core.GetComputerModule<MechJebModuleRendezvousAutopilot>()?.Users.Clear();
                 Core.GetComputerModule<MechJebModuleDockingAutopilot>()?.Users.Clear();
+                (Traverse.Create(Core).Property("Ascent").GetValue() as ComputerModule)?.Users.Clear();
             });
 
             foreach (ManeuverNode n in _nodes)

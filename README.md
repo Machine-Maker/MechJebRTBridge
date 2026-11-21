@@ -27,6 +27,7 @@ locally and in real time, the way an on-board autopilot would.
 | Landing Autopilot | Land at target, Land somewhere | Stop landing (MechJeb calls it internally at touchdown) |
 | Rendezvous Autopilot | Engage, Disengage | The autopilot stopping itself (arrived, failed) |
 | Docking Autopilot | Engage, Disengage | The autopilot stopping itself (docked, target lost); closing the 2.15.x Docking window |
+| Ascent Autopilot | Engage, Disengage (window buttons and the "Ascent AP toggle" part action) | The autopilot stopping itself (circularised); Abort timed launch (dev); the timed-launch countdown itself |
 
 Everything else in MechJeb still acts instantly. The full per-feature status is in
 [`docs/MECHJEB_COVERAGE.md`](docs/MECHJEB_COVERAGE.md). The design and roadmap are in
@@ -68,8 +69,9 @@ not the control loop. This mirrors how RemoteTech's own `AttitudeCommand` works.
    re-invokes the real `Engage` locally (guarded so the prefix lets that call through).
 
 The Node Executor and Landing seams follow the same pattern without the highlight handling.
-Further seams (Ascent AP, Rendezvous, Docking, Translatron, …) are added in
-`BridgeAddon.Start()`. Shared plumbing lives in `src/BridgeCore.cs`.
+Rendezvous, Docking and Ascent share one generic seam on MechJeb's `UserPool`
+(`src/UserPoolBridge.cs`). Every seam is registered in `BridgeAddon.Start()`. Shared plumbing
+lives in `src/BridgeCore.cs`.
 
 While the vessel has no link, SmartASS also keeps holding the attitude it was last commanded
 to. The bridge registers a RemoteTech sanctioned pilot that re-applies MechJeb's attitude
@@ -132,8 +134,10 @@ Harmony (000_Harmony).
 
 ## Known limitations
 
-- **Only SmartASS, Node Executor, Landing, Rendezvous, and Docking are delayed** (see *Supported
-  commands*). Ascent, Translatron, staging, and the rest still act instantly.
+- **Only SmartASS, Node Executor, Landing, Rendezvous, Docking, and Ascent are delayed** (see
+  *Supported commands*). Timed launch, Translatron, staging, and the rest still act instantly.
+  On MechJeb dev, Ascent's Engage starts a timed launch's countdown at the click; only the
+  autopilot engage waits for the signal.
 - MechJeb part actions bound to an action group (SmartASS modes, land somewhere, PANIC, …) are
   delayed once, by RemoteTech's action-group delay. The bridge doesn't add a second delay.
 - Only player clicks are delayed. MechJeb's own internal calls (an autopilot starting its node

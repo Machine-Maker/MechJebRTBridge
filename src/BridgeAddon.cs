@@ -64,7 +64,7 @@ namespace MechJebRTBridge
                   prefix: bypassPrefix, finalizer: bypassFinalizer);
 
             // Generic seam: autopilots engaged/disengaged via their Users pool (UserPoolBridge
-            // allowlist: Rendezvous, Docking). Declared-method lookup with exact parameters,
+            // allowlist: Rendezvous, Docking, Ascent). Declared-method lookup with exact parameters,
             // because UserPool's Add/Remove/Clear hide List<object>'s.
             Patch(harmony, AccessTools.DeclaredMethod(typeof(MuMech.UserPool), "Add", new[] { typeof(object) }),
                   "MuMech.UserPool:Add", prefix: H(typeof(UserPoolBridge), nameof(UserPoolBridge.AddPrefix)));
@@ -84,6 +84,13 @@ namespace MechJebRTBridge
                          "MuMech.AutopilotModule:StopAfterStepFailures",          // dev
                          "MuMech.MechJebCore:ReloadAllComputerModules",           // settings reload
                          "MuMech.MechJebModuleDockingGuidance:OnModuleDisabled",  // 2.15.x: window closed
+                         // dev: Abort (timed launch) disengages the ascent AP with the countdown.
+                         // Instant, like the other aborts (plan doc §8, cancellation delay).
+                         "MuMech.MechJebModuleAscentMenu:AbortTimedLaunch",
+                         // Switching ascent type turns off the other type's autopilot. Dev does it
+                         // with Users.Clear(); 2.15.x sets Enabled directly, so there the wrapper
+                         // changes nothing.
+                         "MuMech.MechJebModuleAscentSettings:DisableAscentModules",
                      })
                 Patch(harmony, stop, prefix: bypassPrefix, finalizer: bypassFinalizer);
 

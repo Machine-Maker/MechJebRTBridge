@@ -114,8 +114,10 @@ stick input still takes over, but late.
 
 | MechJeb feature | Replaces by hand | Player command (seam) | Status |
 |---|---|---|---|
-| Ascent AP engage (classic + PSG) | Staging, steering, throttle | `MechJebModuleAscentMenu.Engage()` (`:88`) → `_autopilot.Users.Add`; part action `OnAscentAPToggleAction` (`MechJebCore.cs:86`) | ⬜ |
-| Ascent AP disengage | — | `menu._autopilot.Users.Clear()` (`UI/AscentView.cs:145`) | ⬜ (cancellation) |
+| Ascent AP engage (classic + PSG) | Staging, steering, throttle | `MechJebModuleAscentMenu.Engage()` (`:88`) → `_autopilot.Users.Add(this)` (`:104`); part action `OnAscentAPToggleAction` (`MechJebCore.cs:245`); *2.15.4* `Users.Add(this)` (`AscentMenu.cs:112`), toggle `MechJebCore.cs:240` | ✅ generic `UserPool` seam (§6). On dev, `Engage()` starts a timed launch's countdown locally at the click; only the engage is delayed |
+| Ascent AP disengage | — | `menu._autopilot.Users.Clear()` (`UI/AscentView.cs:145`), toggle `Users.Clear()`; *2.15.4* `Users.Remove(this)` (`AscentMenu.cs:110`), toggle `Users.Remove` | ✅ generic `UserPool` seam (§6) |
+| Ascent AP stopping itself (circularised, PSG finished) | — | Internal `Users.Clear()` from `Drive` / `OnFixedUpdate` (`AscentClassicAutopilot.cs:213`, `PSGAutopilot.cs:358`; *2.15.4* `AscentBaseAutopilot.cs:240/255`) | — runs locally (physics step) |
+| Abort timed launch (dev) | — | `AscentMenu.AbortTimedLaunch()` (`:164`) → `Users.Clear()` + countdown abort | ⚠️ instant by design: Bypass-wrapped, like the other aborts (plan doc §8) |
 | Ascent settings (target alt, inclination, pitch program, PSG stages, autostage, auto-deploy, …) | — | field edits | ⚠️ setpoint. Only matters while engaged |
 | Ascent circularisation burn | — | Internal: `Core.Node.ExecuteOneNode(this)` (`AscentClassicAutopilot.cs:362`; *2.15.4* `AscentBaseAutopilot.cs:281`) | — runs locally (fixed, §5.1) |
 
@@ -180,9 +182,9 @@ stick input still takes over, but late.
 
 | Bucket | Count | Items |
 |---|---|---|
-| ✅ Delayed | 4 seams | SmartASS `Engage`; NodeExecutor `ExecuteOneNode/AllNodes`; Landing `LandAtPositionTarget/LandUntargeted`; generic `UserPool.Add/Remove/Clear` (Rendezvous AP, Docking AP, engage **and** disengage) |
+| ✅ Delayed | 4 seams | SmartASS `Engage`; NodeExecutor `ExecuteOneNode/AllNodes`; Landing `LandAtPositionTarget/LandUntargeted`; generic `UserPool.Add/Remove/Clear` (Rendezvous AP, Docking AP, Ascent AP, engage **and** disengage) |
 | 🐞 Wrongly delayed | 0 | (§5.1–5.3 fixed; the §5.4 cancel bug is fixed too) |
-| ⬜ Clean gaps | ~12 | Ascent AP, timed launch, Hoverslam, Translatron mode + PANIC, SmartRCS, RCS balancer, Autostage + Autostage-once, Rover drive/stop, auto-deploy toggles, extend/retract all |
+| ⬜ Clean gaps | ~11 | Timed launch, Hoverslam, Translatron mode + PANIC, SmartRCS, RCS balancer, Autostage + Autostage-once, Rover drive/stop, auto-deploy toggles, extend/retract all |
 | ⚠️ Needs design | — | Cancellations (`Abort`, `StopLanding`; `Users.Clear` is done for allowlisted modules); setpoint field writes (thrust limiters, Translatron speed, rover, ascent/docking settings); menu `Enabled` checkbox |
 | — Not delayed by design | — | Node planning/editing, warp, targeting, info/predictions/settings, on-board automation MechJeb runs after a command |
 
@@ -268,7 +270,10 @@ behaviour. Tested by the harness's two "RT cancel" tests. Node Executor / Landin
   `Users.Clear()` (dev) or `Users.Remove(window)` (2.15.4). **Generic seam (implemented,
   `src/UserPoolBridge.cs`):** prefixes on `UserPool.Add/Remove/Clear` (`ComputerModule.cs:357/365/373`,
   *2.15.4* `:323/331/339`). A call is delayed only if all of these hold:
-  - the pool's `_controlledModule` is on the allowlist (currently Rendezvous AP, Docking AP)
+  - the pool's `_controlledModule` is on the allowlist (currently Rendezvous AP, Docking AP, Ascent
+    AP). The allowlist matches type **names**, the module's own or a base class's, because the
+    ascent classes differ: 2.15.4 `MechJebModuleAscentBaseAutopilot` (Classic, PVG), dev
+    `MechJebModuleAscentClassicAutopilot` and `MechJebModulePSGAutopilot`. CI builds against 2.15.x.
   - the call changes `Enabled` (engage while off; disengage while on, and `Remove` only when it
     empties the pool)
   - it's a player command (`IsPlayerCommand`)
@@ -277,7 +282,10 @@ behaviour. Tested by the harness's two "RT cancel" tests. Node Executor / Landin
   `Clear()` has no user, so the allowlisted modules' non-physics internal stop paths are wrapped
   in Bypass: `DockingAutopilot.EndDocking/OnPartCouple`, `RendezvousAutopilot.Finish`,
   `AutopilotModule.StopAfterStepFailures`, `MechJebCore.ReloadAllComputerModules`, and *2.15.4*
-  `DockingGuidance.OnModuleDisabled` (closing the window disengages instantly).
+  `DockingGuidance.OnModuleDisabled` (closing the window disengages instantly), dev
+  `AscentMenu.AbortTimedLaunch`, and `AscentSettings.DisableAscentModules`. Switching ascent type
+  clears the other type's autopilot: dev uses `Users.Clear()` (`AscentSettings.cs:244`), while
+  *2.15.4* sets `Enabled = false` directly (`:293`), so that path never reaches the seam there.
   - **2.15.x windows** re-issue Add/Remove from `OnGUI` every frame until `Enabled` changes, so
     an identical command already in flight is swallowed and the "no connection" message is
     throttled.

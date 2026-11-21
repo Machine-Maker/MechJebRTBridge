@@ -182,7 +182,8 @@ A running program's parameter changes are **new delayed commands**, not free loc
 
 1. ~~**Landing autopilot**~~ ✅ activation done (cancellation open, see §8).
 2. ~~**NodeExecutor**~~ ✅ activation done (cancellation open, see §8).
-3. **Ascent autopilot** — the AP toggle; touches staging/throttle too.
+3. ~~**Ascent autopilot**~~ ✅ engage + disengage, window and toggle action (generic `UserPool`
+   seam). Timed launch is still a gap.
 4. **Persistence (§8)**: basic mode-only payloads done ✅. Extend to setpoints as seams grow.
 5. **Signal-loss policy (§8)** — wire `DeactivateControl`.
 6. ~~Rendezvous, Docking~~ ✅ engage + disengage (generic `UserPool` seam). Still to do: Hoverslam,

@@ -57,7 +57,7 @@ src/BridgeCore.cs           shared plumbing: Bypass guard, RT helpers, module re
 src/SmartAssBridge.cs       seam: SmartASS Engage + UI highlight hold + sanctioned-pilot hold
 src/NodeExecutorBridge.cs   seam: ExecuteOneNode / ExecuteAllNodes
 src/LandingBridge.cs        seam: LandAtPositionTarget / LandUntargeted
-src/UserPoolBridge.cs       generic seam: UserPool.Add/Remove/Clear for allowlisted autopilots (Rendezvous, Docking)
+src/UserPoolBridge.cs       generic seam: UserPool.Add/Remove/Clear for allowlisted autopilots (Rendezvous, Docking, Ascent)
 docs/COMMAND_DELAY_PLAN.md  design + patterns + roadmap
 docs/MECHJEB_COVERAGE.md    coverage matrix: every MechJeb feature vs. RT delay, with status
 GameData/MechJebRTBridge/   packaging root (Plugins/ and .version are build outputs, gitignored)

@@ -9,7 +9,7 @@ namespace MechJebRTBridge
 {
     /// <summary>
     /// Generic seam: delays engaging/disengaging MechJeb autopilots that are switched on through
-    /// their <c>Users</c> pool rather than a dedicated start method.
+    /// their <c>Users</c> pool rather than a dedicated start method: Rendezvous, Docking, Ascent.
     ///
     /// Most MechJeb autopilots run while their <see cref="UserPool"/> is non-empty:
     /// <c>Users.Add(user)</c> sets <c>Enabled = true</c>, and <c>Users.Remove(user)</c> (when it
@@ -36,12 +36,29 @@ namespace MechJebRTBridge
     /// </summary>
     public static class UserPoolBridge
     {
-        // Modules whose engage/disengage is delayed. Extend this as more autopilots are verified.
-        private static readonly Dictionary<Type, string> Delayed = new Dictionary<Type, string>
+        // Modules whose engage/disengage is delayed, by type name (a module matches if it or a base
+        // class has one of these names). Names, not typeof: the ascent classes differ between
+        // MechJeb versions, and CI builds against 2.15.x. Extend this as more autopilots are verified.
+        private static readonly Dictionary<string, string> Delayed = new Dictionary<string, string>
         {
-            { typeof(MechJebModuleRendezvousAutopilot), "Rendezvous AP" },
-            { typeof(MechJebModuleDockingAutopilot),    "Docking AP" },
+            { "MechJebModuleRendezvousAutopilot",    "Rendezvous AP" },
+            { "MechJebModuleDockingAutopilot",       "Docking AP" },
+            { "MechJebModuleAscentBaseAutopilot",    "Ascent AP" }, // 2.15.x: base of Classic and PVG
+            { "MechJebModuleAscentClassicAutopilot", "Ascent AP" }, // dev
+            { "MechJebModulePSGAutopilot",           "Ascent AP" }, // dev
         };
+
+        private static readonly Dictionary<Type, string> _labelCache = new Dictionary<Type, string>();
+
+        // The allowlist label for a module type, or null if it isn't delayed.
+        private static string Label(Type t)
+        {
+            if (_labelCache.TryGetValue(t, out string label)) return label;
+            for (Type b = t; b != null && label == null; b = b.BaseType)
+                Delayed.TryGetValue(b.Name, out label);
+            _labelCache[t] = label;
+            return label;
+        }
 
         private enum PoolAction { Add, Remove, Clear }
 
@@ -72,14 +89,14 @@ namespace MechJebRTBridge
         internal static bool AddPrefix(UserPool __instance, object user)
         {
             ComputerModule m = ControlledModule(__instance);
-            if (m == null || !Delayed.ContainsKey(m.GetType()) || m.Enabled || user == null) return true;
+            if (m == null || Label(m.GetType()) == null || m.Enabled || user == null) return true;
             return Intercept(m, user, PoolAction.Add);
         }
 
         internal static bool RemovePrefix(UserPool __instance, object user)
         {
             ComputerModule m = ControlledModule(__instance);
-            if (m == null || !Delayed.ContainsKey(m.GetType()) || !m.Enabled) return true;
+            if (m == null || Label(m.GetType()) == null || !m.Enabled) return true;
             // Only a Remove that empties the pool disengages the module.
             if (user == null || !__instance.Contains(user) || __instance.Count > 1) return true;
             return Intercept(m, user, PoolAction.Remove);
@@ -88,7 +105,7 @@ namespace MechJebRTBridge
         internal static bool ClearPrefix(UserPool __instance)
         {
             ComputerModule m = ControlledModule(__instance);
-            if (m == null || !Delayed.ContainsKey(m.GetType()) || !m.Enabled) return true;
+            if (m == null || Label(m.GetType()) == null || !m.Enabled) return true;
             return Intercept(m, null, PoolAction.Clear);
         }
 
@@ -98,7 +115,7 @@ namespace MechJebRTBridge
         {
             try
             {
-                string label = Delayed[module.GetType()];
+                string label = Label(module.GetType());
                 string verb  = action == PoolAction.Add ? "engage" : "disengage";
 
                 // Add/Remove from another autopilot or a kOS binding is on-board, not a click.

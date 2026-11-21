@@ -46,6 +46,10 @@ namespace MechJebRTBridge.Tests
             new TestCase("Docking AP: engage + disengage delayed",  DockingEngageDisengageDelayed),
             new TestCase("Docking AP: EndDocking is instant",       DockingEndDockingInstant),
             new TestCase("Docking AP: closing the window is instant", DockingWindowCloseInstant),
+            new TestCase("Ascent AP: engage is delayed",            AscentEngageDelayed),
+            new TestCase("Ascent AP: disengage (Remove, Clear) is delayed", AscentDisengageDelayed),
+            new TestCase("Ascent AP: on-board stop is instant",     AscentInternalStopInstant),
+            new TestCase("Ascent AP: toggle part action is delayed", AscentToggleActionDelayed),
             new TestCase("RT cancel: Rendezvous engage can be re-sent", RtCancelThenResend),
             new TestCase("RT cancel: SmartASS highlight keeps tracking", RtCancelSmartAssTracking),
         };
@@ -77,6 +81,8 @@ namespace MechJebRTBridge.Tests
             ("MuMech.AutopilotModule:StopAfterStepFailures", true),
             ("MuMech.MechJebCore:ReloadAllComputerModules", true),
             ("MuMech.MechJebModuleDockingGuidance:OnModuleDisabled", true),
+            ("MuMech.MechJebModuleAscentMenu:AbortTimedLaunch", true),
+            ("MuMech.MechJebModuleAscentSettings:DisableAscentModules", true),
         };
 
         private static MethodBase Resolve(string target)
@@ -378,6 +384,99 @@ namespace MechJebRTBridge.Tests
 
             Check(!ap.Enabled, "closing the Docking window didn't disengage at once");
             c.CheckLog("SCHED", mark, 0, "window close");
+        }
+
+        // ---- UserPool seam: Ascent ---------------------------------------------
+
+        private const string AscentWindow = "MechJebModuleAscentMenu";
+
+        // The ascent window only acts on a button click, so it may be open.
+        private static DisplayModule AscentMenu(Ctx c) => c.Window(AscentWindow, "Ascent Guidance", allowOpen: true);
+
+        private static IEnumerator AscentEngageDelayed(Ctx c)
+        {
+            ComputerModule ap = c.Ascent();
+            DisplayModule  w  = AscentMenu(c);
+            Check(!ap.Enabled, "Ascent AP already engaged");
+
+            int mark = c.Mark();
+            double sent = UT;
+            ap.Users.Add(w); // the Engage button
+
+            c.CheckLog("SCHED Ascent AP engage", mark, 1, "click");
+            Check(c.QueuedCount == 1, $"expected 1 bridge command in the RT queue, got {c.QueuedCount}");
+            Check(!ap.Enabled, "Ascent AP engaged before the command arrived");
+
+            yield return WaitUntil(() => ap.Enabled, "Ascent AP to engage");
+            CheckDelayed(sent, "Ascent engage");
+            c.CheckLog($"EXEC {ap.GetType().Name} Add", mark, 1, "engage");
+            c.Note = ap.GetType().Name;
+        }
+
+        private static IEnumerator AscentDisengageDelayed(Ctx c)
+        {
+            ComputerModule ap = c.Ascent();
+            DisplayModule  w  = AscentMenu(c);
+
+            // Remove(window): the 2.15.x Disengage button and toggle action.
+            yield return Physics(() => ap.Users.Add(w));
+            int mark = c.Mark();
+            double sent = UT;
+            ap.Users.Remove(w);
+            c.CheckLog("SCHED Ascent AP disengage", mark, 1, "Remove click");
+            Check(ap.Enabled, "Ascent AP disengaged before the command arrived");
+            yield return WaitUntil(() => !ap.Enabled, "Ascent AP to disengage (Remove)");
+            CheckDelayed(sent, "Ascent disengage (Remove)");
+
+            // Clear(): the dev Disengage button and toggle action.
+            yield return Physics(() => ap.Users.Add(w));
+            mark = c.Mark();
+            sent = UT;
+            ap.Users.Clear();
+            c.CheckLog("SCHED Ascent AP disengage", mark, 1, "Clear click");
+            Check(ap.Enabled, "Ascent AP disengaged before the command arrived");
+            yield return WaitUntil(() => !ap.Enabled, "Ascent AP to disengage (Clear)");
+            CheckDelayed(sent, "Ascent disengage (Clear)");
+        }
+
+        private static IEnumerator AscentInternalStopInstant(Ctx c)
+        {
+            ComputerModule ap = c.Ascent();
+            DisplayModule  w  = AscentMenu(c);
+            yield return Physics(() => ap.Users.Add(w));
+
+            int mark = c.Mark();
+            yield return Physics(() => ap.Users.Clear()); // what the autopilot does after circularising
+
+            Check(!ap.Enabled, "on-board Clear didn't disengage the Ascent AP at once");
+            c.CheckLog("SCHED", mark, 0, "on-board stop");
+            Check(c.QueuedCount == 0, "on-board stop put a command in the RT queue");
+        }
+
+        // MechJebCore's "Ascent AP toggle" part action, clicked in the PAW (outside the physics
+        // step). Bound to an action group it fires from RT's ActionGroupCommand.Pop instead,
+        // which BridgeAddon wraps in Bypass; that path isn't covered here.
+        private static IEnumerator AscentToggleActionDelayed(Ctx c)
+        {
+            ComputerModule ap = c.Ascent();
+            AscentMenu(c);
+            var param = new KSPActionParam(KSPActionGroup.None, KSPActionType.Activate);
+
+            int mark = c.Mark();
+            double sent = UT;
+            c.Core.OnAscentAPToggleAction(param);
+            c.CheckLog("SCHED Ascent AP engage", mark, 1, "toggle (engage)");
+            Check(!ap.Enabled, "Ascent AP engaged before the command arrived");
+            yield return WaitUntil(() => ap.Enabled, "Ascent AP to engage (toggle)");
+            CheckDelayed(sent, "Ascent toggle (engage)");
+
+            mark = c.Mark();
+            sent = UT;
+            c.Core.OnAscentAPToggleAction(param);
+            c.CheckLog("SCHED Ascent AP disengage", mark, 1, "toggle (disengage)");
+            Check(ap.Enabled, "Ascent AP disengaged before the command arrived");
+            yield return WaitUntil(() => !ap.Enabled, "Ascent AP to disengage (toggle)");
+            CheckDelayed(sent, "Ascent toggle (disengage)");
         }
 
         // ---- RemoteTech cancel -------------------------------------------------
