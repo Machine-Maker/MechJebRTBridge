@@ -184,7 +184,8 @@ A running program's parameter changes are **new delayed commands**, not free loc
 3. **Ascent autopilot** — the AP toggle; touches staging/throttle too.
 4. **Persistence (§8)**: basic mode-only payloads done ✅. Extend to setpoints as seams grow.
 5. **Signal-loss policy (§8)** — wire `DeactivateControl`.
-6. Rendezvous, Docking, Hoverslam, Translatron, Spinup, auto-staging.
+6. ~~Rendezvous, Docking~~ ✅ engage + disengage (generic `UserPool` seam). Still to do: Hoverslam,
+   Translatron, auto-staging. (Spinup needs nothing: only the PSG autopilot starts it.)
 7. One-shot **B** actions (stage, PANIC, deploys).
 8. Setpoint-granularity seams (⚠️ thrust limits, rover waypoints, ascent/landing params).
 
@@ -203,6 +204,11 @@ A running program's parameter changes are **new delayed commands**, not free loc
   so they aren't delayed twice. Any other RT command that can fire MechJeb code (e.g. a future
   `EventCommand` path to a MechJeb `KSPEvent`) needs the same wrapper.
 
+- **RT's manual extra delay** is `FlightComputer.TotalDelay` (the "Delay (+ signal)" field in
+  RT's queue window). `Enqueue` adds `max(0, TotalDelay − Delay)` as the command's
+  `ExtraDelay`. The test harness uses it to get a few seconds of delay in LKO. RT pops queued
+  commands in `FlightComputer.OnUpdate` (the `Update` phase), so `RtPop` runs outside the
+  physics step.
 - The UI sets the state field (`target`) **before** calling the command (`Engage`), so the
   prefix already sees the new value — track the *previous* value out-of-band (per-frame
   `OnFixedUpdate` postfix) to keep the highlight truthful (§4).

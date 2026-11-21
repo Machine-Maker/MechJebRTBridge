@@ -9,6 +9,8 @@
     <Prefer32Bit>false</Prefer32Bit>
     <!-- Release tags are v-prefixed (v0.1.0); MinVer ignores them without this. -->
     <MinVerTagPrefix>v</MinVerTagPrefix>
+    <!-- The in-game test harness is its own project; keep its sources out of this DLL. -->
+    <DefaultItemExcludes>$(DefaultItemExcludes);tests/**</DefaultItemExcludes>
   </PropertyGroup>
 
   <ItemGroup>

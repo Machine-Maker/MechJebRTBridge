@@ -38,6 +38,7 @@ now stands. Before you report a task as done, check this list:
 | Learn a non-obvious gotcha (MechJeb/RT internals, reflection quirks, load order) | Plan doc §10 |
 | Change build, dependencies, target framework, CI, or install layout | README "Building"/"Install" and the "Build & test" section below |
 | Update the MechJeb/RT checkouts, or find a new MechJeb feature or caller | `docs/MECHJEB_COVERAGE.md` (source commits at the top, new rows, line refs, §5 bugs, §6 version notes) |
+| Add or change a seam, a patch target, or a bridge `Debug.Log` format the tests match | `tests/MechJebRTBridge.Tests/Tests.cs` (`PatchTargets`, a click test and an on-board test per seam, log strings) and the table in `tests/README.md` |
 | Bump supported KSP / MechJeb / RemoteTech versions | `MechJebRTBridge.csproj` `KSPVersionFile` metadata and README |
 
 Also:
@@ -60,6 +61,8 @@ src/UserPoolBridge.cs       generic seam: UserPool.Add/Remove/Clear for allowlis
 docs/COMMAND_DELAY_PLAN.md  design + patterns + roadmap
 docs/MECHJEB_COVERAGE.md    coverage matrix: every MechJeb feature vs. RT delay, with status
 GameData/MechJebRTBridge/   packaging root (Plugins/ and .version are build outputs, gitignored)
+tests/MechJebRTBridge.Tests/  dev-only in-game test harness (separate plugin, never shipped);
+                            tests/README.md explains it
 ```
 
 Sibling checkouts (reference only, not modified by this repo):
@@ -78,7 +81,8 @@ Follow plan doc §6 and copy the shape of an existing seam:
 3. `public static bool RtPop(ConfigNode)` (it must be public: RemoteTech calls it by reflection).
    Re-invoke the real method inside `Bypass = true` / `finally Bypass = false`, then return `false`.
 4. Register it in `BridgeAddon.Start()`.
-5. **Update the docs (Rule #1).**
+5. Add a click test and an on-board test to the harness (`tests/README.md`, "Adding a test").
+6. **Update the docs (Rule #1).**
 
 ## Build & test
 
@@ -86,9 +90,16 @@ Follow plan doc §6 and copy the shape of an existing seam:
 - Machine paths live in the gitignored `Directory.Build.props.user` (`KSPBT_GameRoot`,
   `KSPBT_ManagedPath`). The post-build target in `Directory.Build.targets` copies the DLL into
   `$(KSPBT_GameRoot)/GameData/MechJebRTBridge/Plugins/`.
-- There are no automated tests. Verification is in-game: launch the KSP instance and check
-  `KSP.log` for `[MJ-RT Bridge]` lines. Expect a `patched …` line per seam, then `SCHED …` /
-  `EXEC …` when commands are issued.
+- Tests run in game. `tests/MechJebRTBridge.Tests/` is a separate dev-only plugin (see
+  `tests/README.md`). Build it with
+  `dotnet build tests/MechJebRTBridge.Tests/MechJebRTBridge.Tests.csproj -c Release`. It
+  deploys to `GameData/MechJebRTBridge.Tests/` and must never end up in `GameData/MechJebRTBridge/`
+  (its csproj overrides `KSPBT_ModRoot`, and the main csproj excludes `tests/**`). In flight,
+  run it from its toolbar button, then `grep "MJ-RT" KSP.log`. You get `[MJ-RT Test] PASS|FAIL|SKIP`
+  per test and a `SUMMARY` line, next to the bridge's own `patched …` / `SCHED …` / `EXEC …` lines.
+  CI doesn't build or run the harness.
+- What the harness can't cover (save/load mid-command, real clicks and real flight, action
+  groups, kOS) is still checked by hand. `tests/README.md` lists it.
 - Versioning comes from git tags via MinVer (`v0.1.0` → 0.1.0, with `MinVerTagPrefix=v`).
   Between tags the version is e.g. `0.1.1-alpha.0.N`. Releases are cut by pushing a `v*.*.*`
   tag (`.github/workflows/release.yml`).

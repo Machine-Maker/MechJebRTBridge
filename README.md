@@ -110,6 +110,15 @@ against the CKAN-released MechJeb2, RemoteTech and Harmony2, attaches
 That last step needs the `CKAN_META_TOKEN` repo secret: a token with Contents write access to
 KSP-Mods-CKAN.
 
+## Testing
+
+`tests/MechJebRTBridge.Tests/` is a dev-only in-game test harness (never shipped). Build it with
+`dotnet build tests/MechJebRTBridge.Tests/MechJebRTBridge.Tests.csproj -c Release`, put an
+uncrewed MechJeb probe in low Kerbin orbit, and run the tests from the green toolbar button in
+flight. Results go to the window and to `KSP.log` (`[MJ-RT Test]`). See
+[`tests/README.md`](tests/README.md) for the test vessel, what's covered, and what's still
+manual.
+
 ## Install
 
 Via CKAN: add the meta repo with
