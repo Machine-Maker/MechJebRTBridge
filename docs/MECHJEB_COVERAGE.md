@@ -181,7 +181,7 @@ stick input still takes over, but late.
 | Bucket | Count | Items |
 |---|---|---|
 | ✅ Delayed | 4 seams | SmartASS `Engage`; NodeExecutor `ExecuteOneNode/AllNodes`; Landing `LandAtPositionTarget/LandUntargeted`; generic `UserPool.Add/Remove/Clear` (Rendezvous AP, Docking AP, engage **and** disengage) |
-| 🐞 Wrongly delayed | 0 | (§5.1–5.3 fixed) |
+| 🐞 Wrongly delayed | 0 | (§5.1–5.3 fixed; the §5.4 cancel bug is fixed too) |
 | ⬜ Clean gaps | ~12 | Ascent AP, timed launch, Hoverslam, Translatron mode + PANIC, SmartRCS, RCS balancer, Autostage + Autostage-once, Rover drive/stop, auto-deploy toggles, extend/retract all |
 | ⚠️ Needs design | — | Cancellations (`Abort`, `StopLanding`; `Users.Clear` is done for allowlisted modules); setpoint field writes (thrust limiters, Translatron speed, rover, ascent/docking settings); menu `Enabled` checkbox |
 | — Not delayed by design | — | Node planning/editing, warp, targeting, info/predictions/settings, on-board automation MechJeb runs after a command |
@@ -231,6 +231,29 @@ cover it. Anything MechJeb does inside that pop has already been delayed once an
 script runs on the vessel's own CPU, so its MechJeb calls are on-board and shouldn't be delayed
 (RT/kOS integration delays the *typed* commands already). kOS executes in `FixedUpdate`, so the
 §5.1 physics-step check leaves its calls undelayed. This hasn't been tested in game with kOS.
+
+### 5.4 Cancelling in RT's queue left the bridge thinking the command was in flight (✅ fixed)
+
+RT's queue window "x" enqueues a `CancelCommand`, which removes the queued `ExternalAPICommand`.
+`ExternalAPICommand` doesn't override `CommandCanceled`, so the bridge gets no callback. RT also
+drops queued commands silently in other cases (plan doc §10). In-flight state was cleared only in
+`RtPop`, so after a cancel:
+- **UserPool seam (Rendezvous / Docking):** `_inFlight` kept `(module, action)`, so every later
+  click on that button was swallowed as "already on its way", with no message, until KSP
+  restarted.
+- **SmartASS:** `_inFlight` kept its count, so `TrackPostfix` stopped tracking the mode that
+  SmartASS instance actually held.
+- **Node Executor / Landing:** only a `_pending` entry leaked.
+
+A cancel arrives first only when RT's manual extra delay is set: `CancelCommand` ignores extra
+delay, so it can overtake a queued command.
+
+**Fix** (`BridgeCore.InFlightSet<T>`, `BridgeCore.IsQueued`): each in-flight entry records its
+vessel and token. `Has()` checks the entry against the flight computer's live queue, and forgets
+an entry RT no longer holds, along with its `_pending` stash. It logs `no longer in the RT queue`.
+If RT's internals can't be read, `IsQueued` errs towards "still queued", which is the old
+behaviour. Tested by the harness's two "RT cancel" tests. Node Executor / Landing still leak a
+`_pending` entry per dropped command, which is harmless.
 
 ---
 

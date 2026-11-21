@@ -94,7 +94,8 @@ the UI immediately. Reference implementation (SmartASS):
   `"<action> queued · signal delay X.Xs"` (`ScreenMessages.PostScreenMessage`).
 - On `RtPop`: set the UI field to the requested state, update `_committed`, run the command
   — so the highlight snaps over exactly when the vessel acts.
-- Handle rapid re-clicks with an in-flight counter (`_inFlight`).
+- Track commands in flight per module with `InFlightSet<T>` (`_inFlight`), keyed by token. It
+  covers rapid re-clicks, and it forgets a command RemoteTech drops without popping (§10).
 
 This is safe only because the control loop is **latched** at activation (e.g. SmartASS
 `Engage()` pushes into `Core.Attitude`; the UI `target` field is display-only). **Verify per
@@ -209,6 +210,18 @@ A running program's parameter changes are **new delayed commands**, not free loc
   `ExtraDelay`. The test harness uses it to get a few seconds of delay in LKO. RT pops queued
   commands in `FlightComputer.OnUpdate` (the `Update` phase), so `RtPop` runs outside the
   physics step.
+- **RT can drop a queued command without telling us.** There are three ways:
+  - A `CancelCommand` from the queue window's "x" removes our `ExternalAPICommand` without calling
+    the bridge. It ignores extra delay, so it can overtake the command.
+  - A command that comes due while the vessel is unpowered is removed unpopped.
+  - Hibernation drops queued commands.
+
+  `QueueCommandToFlightComputer` also returns true when `Enqueue` silently discards the command
+  (`!InputAllowed`, or a queue entry that compares equal). So in-flight state must not be
+  cleared only in `RtPop`. `InFlightSet.Has` checks each entry against the live queue
+  (`BridgeCore.IsQueued`, which reads the private `ExternalAPICommand.externalData` for our
+  `Token`). See `MECHJEB_COVERAGE.md` §5.4.
+
 - The UI sets the state field (`target`) **before** calling the command (`Engage`), so the
   prefix already sees the new value — track the *previous* value out-of-band (per-frame
   `OnFixedUpdate` postfix) to keep the highlight truthful (§4).

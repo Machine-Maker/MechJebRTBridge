@@ -27,7 +27,7 @@ namespace MechJebRTBridge
     /// step or inside stop methods that BridgeAddon wraps in Bypass.
     ///
     /// MechJeb 2.15.x windows re-issue Add/Remove from OnGUI every frame until Enabled changes, so
-    /// an identical command already in flight is swallowed rather than queued again.
+    /// an identical command still in RemoteTech's queue is swallowed rather than queued again.
     ///
     /// Patched from <see cref="BridgeAddon"/>:
     ///   - AddPrefix    → prefix on UserPool.Add(object)
@@ -58,8 +58,10 @@ namespace MechJebRTBridge
         private static readonly Dictionary<string, Pending> _pending = new Dictionary<string, Pending>();
 
         // (module, action) pairs with a command in the RT queue; see the 2.15.x OnGUI note above.
-        private static readonly HashSet<(ComputerModule, PoolAction)> _inFlight =
-            new HashSet<(ComputerModule, PoolAction)>();
+        // A command RT drops without popping it (e.g. cancelled in the queue window) stops
+        // counting, so the next click goes out again.
+        private static readonly InFlightSet<(ComputerModule, PoolAction)> _inFlight =
+            new InFlightSet<(ComputerModule, PoolAction)>(token => _pending.Remove(token));
 
         // Throttles the "no connection" message, which 2.15.x OnGUI would otherwise post every frame.
         private static readonly Dictionary<(ComputerModule, PoolAction), float> _lastRefusal =
@@ -107,7 +109,7 @@ namespace MechJebRTBridge
                 if (vessel == null || module.Vessel != vessel || !BridgeCore.NeedsDelay(vessel)) return true;
 
                 var key = (module, action);
-                if (_inFlight.Contains(key)) return false; // already on its way
+                if (_inFlight.Has(key)) return false; // already on its way
 
                 double delay = BridgeCore.SafeDelay(vessel.id);
                 if (!BridgeCore.IsConnected(delay))
@@ -126,7 +128,7 @@ namespace MechJebRTBridge
 
                 if (API.QueueCommandToFlightComputer(BuildCommandNode(vessel.id, token, module, user, action, label, verb)))
                 {
-                    _inFlight.Add(key);
+                    _inFlight.Add(key, vessel.id, token);
                     if (delay >= 0.1)
                         BridgeCore.Message($"{label}: {verb} queued · signal delay {delay:F1}s");
                     Debug.Log($"[MJ-RT Bridge] SCHED {label} {verb} delay={delay:F2}s token={BridgeCore.Short(token)}");
@@ -157,10 +159,10 @@ namespace MechJebRTBridge
                 string moduleType = BridgeCore.GetValueDeep(data, "UPModule");
                 string userType   = BridgeCore.GetValueDeep(data, "UPUser");
 
+                _inFlight.Remove(token);
                 if (token != null && _pending.TryGetValue(token, out Pending p))
                 {
                     _pending.Remove(token);
-                    _inFlight.Remove((p.Module, p.Action));
                     action = p.Action;
                     if (p.Module != null && p.Module.Vessel == FlightGlobals.ActiveVessel)
                     {

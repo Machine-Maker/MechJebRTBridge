@@ -53,7 +53,7 @@ Also:
 ```
 src/BridgeAddon.cs          bootstrap: applies every Harmony patch, each isolated in try/catch
 src/BridgeCore.cs           shared plumbing: Bypass guard, RT helpers, module resolution,
-                            command-node builder, InFlightCounter<T>
+                            command-node builder, RT queue check, InFlightSet<T>
 src/SmartAssBridge.cs       seam: SmartASS Engage + UI highlight hold + sanctioned-pilot hold
 src/NodeExecutorBridge.cs   seam: ExecuteOneNode / ExecuteAllNodes
 src/LandingBridge.cs        seam: LandAtPositionTarget / LandUntargeted

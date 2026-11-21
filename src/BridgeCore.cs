@@ -1,5 +1,9 @@
 using System;
+using System.Collections.Generic;
+using HarmonyLib;
 using MuMech;
+using RemoteTech;
+using RemoteTech.FlightComputer.Commands;
 using RemoteTech.API;
 using UnityEngine;
 
@@ -75,6 +79,48 @@ namespace MechJebRTBridge
         // because no connection is a different condition (command refused, not just delayed).
         internal static bool NeedsDelay(Vessel vessel) =>
             API.IsRemoteTechEnabled() && !API.HasLocalControl(vessel.id);
+
+        // ---- RT queue inspection -------------------------------------------
+        // RemoteTech can drop a queued command without telling the bridge (see InFlightSet), so
+        // in-flight state is checked against the flight computer's live queue. The command's
+        // ConfigNode (with our Token) sits in ExternalAPICommand's private `externalData`.
+
+        private static AccessTools.FieldRef<ExternalAPICommand, ConfigNode> _externalData;
+        private static bool _queueInspectionBroken;
+
+        /// <summary>
+        /// True if the vessel's RT queue holds a command with this token. Errs towards true when it
+        /// can't tell (no RTCore, or this RT version's internals differ), so the entry then lasts
+        /// until RtPop.
+        /// </summary>
+        internal static bool IsQueued(Guid vesselId, string token)
+        {
+            if (_queueInspectionBroken || RTCore.Instance == null) return true;
+            if (_externalData == null)
+            {
+                try { _externalData = AccessTools.FieldRefAccess<ExternalAPICommand, ConfigNode>("externalData"); }
+                catch (Exception e)
+                {
+                    _queueInspectionBroken = true;
+                    Debug.LogError("[MJ-RT Bridge] can't inspect the RemoteTech queue; a command RT cancels or " +
+                                   "drops will keep blocking its button: " + e.Message);
+                    return true;
+                }
+            }
+            try
+            {
+                VesselSatellite sat = RTCore.Instance.Satellites[vesselId];
+                if (sat == null) return false; // vessel gone
+                foreach (ICommand c in sat.FlightComputer.QueuedCommands)
+                    if (c is ExternalAPICommand ext && GetValueDeep(_externalData(ext), "Token") == token)
+                        return true;
+                return false;
+            }
+            catch (Exception)
+            {
+                return true; // satellite has no flight computer / signal processor yet: can't tell
+            }
+        }
 
         // ---- module resolution ---------------------------------------------
         // Each seam caches the MechJeb module instance in its Pending object. After a
@@ -161,26 +207,67 @@ namespace MechJebRTBridge
     }
 
     /// <summary>
-    /// Per-seam counter tracking how many commands are currently in the RT queue for a given
-    /// module instance. Used by Type-A seams to suppress UI-state tracking while a command
-    /// is in flight, and to support rapid re-clicks without losing count.
+    /// Commands a seam has put in the RT queue and not yet seen arrive, grouped by key (a module
+    /// instance, or a module + action). Used to freeze the SmartASS highlight while a command is
+    /// travelling and to de-duplicate the UserPool seam's per-frame re-clicks.
+    ///
+    /// An entry ends when RtPop calls <see cref="Remove"/>, or when RemoteTech no longer holds the
+    /// command. RT can drop a queued command without calling the bridge: the queue window's
+    /// cancel ("x"), a command coming due while the vessel is unpowered, hibernation. So
+    /// <see cref="Has"/> checks each entry against the live queue (<see cref="BridgeCore.IsQueued"/>)
+    /// and forgets the ones RT no longer has, calling <c>onDropped</c> with their tokens.
     /// </summary>
-    internal sealed class InFlightCounter<T> where T : class
+    internal sealed class InFlightSet<TKey>
     {
-        private readonly System.Collections.Generic.Dictionary<T, int> _dict =
-            new System.Collections.Generic.Dictionary<T, int>();
-
-        internal bool Has(T instance) =>
-            _dict.TryGetValue(instance, out int n) && n > 0;
-
-        internal void Add(T instance) =>
-            _dict[instance] = (_dict.TryGetValue(instance, out int n) ? n : 0) + 1;
-
-        internal void Remove(T instance)
+        private struct Entry
         {
-            if (!_dict.TryGetValue(instance, out int n)) return;
-            if (n <= 1) _dict.Remove(instance);
-            else _dict[instance] = n - 1;
+            internal Guid VesselId;
+            internal string Token;
+        }
+
+        private readonly Dictionary<TKey, List<Entry>> _dict = new Dictionary<TKey, List<Entry>>();
+        private readonly Action<string> _onDropped;
+
+        internal InFlightSet(Action<string> onDropped) { _onDropped = onDropped; }
+
+        internal void Add(TKey key, Guid vesselId, string token)
+        {
+            if (!_dict.TryGetValue(key, out List<Entry> list)) _dict[key] = list = new List<Entry>();
+            list.Add(new Entry { VesselId = vesselId, Token = token });
+        }
+
+        /// <summary>The command arrived (RtPop). Matches by token, under whatever key it was added.</summary>
+        internal void Remove(string token)
+        {
+            if (token == null) return;
+            TKey emptied = default;
+            bool found = false;
+            foreach (var kv in _dict)
+            {
+                if (kv.Value.RemoveAll(e => e.Token == token) == 0) continue;
+                found = kv.Value.Count == 0;
+                emptied = kv.Key;
+                break;
+            }
+            if (found) _dict.Remove(emptied);
+        }
+
+        /// <summary>True if a command for <paramref name="key"/> is still in RemoteTech's queue.</summary>
+        internal bool Has(TKey key)
+        {
+            if (!_dict.TryGetValue(key, out List<Entry> list)) return false;
+            for (int i = list.Count - 1; i >= 0; i--)
+            {
+                Entry e = list[i];
+                if (BridgeCore.IsQueued(e.VesselId, e.Token)) continue;
+                list.RemoveAt(i);
+                Debug.Log($"[MJ-RT Bridge] command token={BridgeCore.Short(e.Token)} is no longer in the RT queue " +
+                          "(cancelled or dropped by RemoteTech); forgetting it");
+                _onDropped?.Invoke(e.Token);
+            }
+            if (list.Count > 0) return true;
+            _dict.Remove(key);
+            return false;
         }
     }
 }

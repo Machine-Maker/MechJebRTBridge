@@ -39,8 +39,10 @@ namespace MechJebRTBridge
         private static readonly Dictionary<MechJebModuleSmartASS, MechJebModuleSmartASS.Target> _committed =
             new Dictionary<MechJebModuleSmartASS, MechJebModuleSmartASS.Target>();
 
-        private static readonly InFlightCounter<MechJebModuleSmartASS> _inFlight =
-            new InFlightCounter<MechJebModuleSmartASS>();
+        // Commands in the RT queue per SmartASS. A command RT drops without popping it (e.g.
+        // cancelled in the queue window) is forgotten here and in _pending.
+        private static readonly InFlightSet<MechJebModuleSmartASS> _inFlight =
+            new InFlightSet<MechJebModuleSmartASS>(token => _pending.Remove(token));
 
         // ---- Harmony hooks (names referenced as strings from BridgeAddon) --
 
@@ -116,7 +118,7 @@ namespace MechJebRTBridge
 
                 if (API.QueueCommandToFlightComputer(BuildCommandNode(vessel.id, token, requested, resetPID)))
                 {
-                    _inFlight.Add(instance);
+                    _inFlight.Add(instance, vessel.id, token);
                     RevertHighlight(instance, committed);
                     if (delay >= 0.1)
                         BridgeCore.Message($"SmartASS: {requested} queued · signal delay {delay:F1}s");
@@ -190,7 +192,7 @@ namespace MechJebRTBridge
                 BridgeCore.Bypass = true;
                 try { sass.Engage(resetPID); }
                 finally { BridgeCore.Bypass = false; }
-                _inFlight.Remove(sass);
+                _inFlight.Remove(token);
 
                 string src = reconstructed ? " (reconstructed)" : "";
                 bool attEnabled = sass.Core?.Attitude?.Enabled ?? false;
