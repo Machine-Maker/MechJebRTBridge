@@ -230,7 +230,7 @@ cover it. Anything MechJeb does inside that pop has already been delayed once an
 `MechJebKos` calls `Engage`, `ExecuteOneNode/AllNodes`, `Users.Add/Clear` directly. A kOS
 script runs on the vessel's own CPU, so its MechJeb calls are on-board and shouldn't be delayed
 (RT/kOS integration delays the *typed* commands already). kOS executes in `FixedUpdate`, so the
-§5.1 physics-step check leaves its calls undelayed. This hasn't been tested in game with kOS.
+§5.1 physics-step check leaves its calls undelayed. Checked in game with kOS on 2026-11-20.
 
 ### 5.4 Cancelling in RT's queue left the bridge thinking the command was in flight (✅ fixed)
 
